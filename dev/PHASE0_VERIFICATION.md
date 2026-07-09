@@ -108,18 +108,20 @@ nor `inbox_events` at all.
 Start each service individually (`mvn -pl services/<name> spring-boot:run`)
 and confirm `/actuator/health` returns `{"status":"UP"}`.
 
-**⚠️ Port conflict to check for, beyond the template-service item already
-in the Phase 0 backlog:** `dev/docker-compose.yml`'s `schema-registry`
-container binds **host port 8081**, and `customer-service`'s
-`application.yml` also sets `server.port: 8081`. Running the full local
-dev stack (`docker compose up`) and `customer-service` at the same time
-will fail with an address-already-in-use error on whichever starts second.
-This was not caught by the earlier CLAUDE_ANALYSIS.md audit (which only
-compared service ports against each other and against Kafka UI) — it only
-surfaces when you actually try to run the compose stack and a service
-side-by-side, which this checklist now does. Track this alongside the
-template-service/Kafka-UI 8080 conflict when commit 5 is scoped; do not
-fix silently as part of commit 1.
+**RESOLVED — Phase 0 commit 5 ("Normalize local development ports").**
+`dev/docker-compose.yml`'s `schema-registry` container bound **host port
+8081**, colliding with `customer-service`'s `server.port: 8081` — running
+the full local dev stack and `customer-service` side by side would fail
+with an address-already-in-use error. This was not caught by the earlier
+`CLAUDE_ANALYSIS.md` audit (which only compared service ports against
+each other and against Kafka UI); it only surfaced once this checklist
+actually ran the compose stack and a service side by side. `schema-registry`'s
+host-side port mapping moved to 8090 (container still listens on 8081
+internally — no Docker-internal URL changed); `customer-service` was left
+untouched at 8081, since it's the actively-used business API and
+schema-registry's `localhost:8081` was only referenced by two unused
+config defaults, not by any live code path. Full audit and rationale for
+choosing which side to move are in commit 5's summary.
 
 ## 5. Kafka Topic Verification
 
@@ -187,6 +189,7 @@ level without needing all 9 services up.
 | AFTER commit 2 | 2026-07-09 | payment-service V1+V2 Flyway replay | Migrations apply cleanly; outbox_events + inbox_events verified (see below) |
 | AFTER commit 3 | 2026-07-09 | `dev/init-scripts/init-databases.sql` replay | All 9 service databases created and connectable (see below) |
 | AFTER commit 4 | 2026-07-09 | `PaymentApplicationService.selectRail()` unit tests | 13/13 pass — boundary values and explicit override all correct (see below) |
+| AFTER commit 5 | 2026-07-09 | Full repo-wide port reference audit + docker-compose replay | Zero remaining `:8080`/`:8081` conflicts; schema-registry container verified reachable on new host port (see below) |
 
 ### BEFORE — actual findings from running the checklist, not just reading code
 
@@ -397,3 +400,77 @@ Scope check: only `PaymentApplicationService.java` (logic + constants +
 Javadoc), `RtgsRailAdapter.java` (Javadoc only, explicitly approved for
 this reason), and the new test file were touched. No other adapter, no
 unrelated payment flow.
+
+### AFTER commit 5 — normalize local development ports
+
+Full repository-wide audit performed before any change, then a
+repository-wide re-search after, per the requested process:
+
+1. **Audit**: searched every `.yml`/`.yaml`/`.md`/`.sh`/`.java`/`.sql`/
+   `.properties`/`.json` file for `localhost:8080`, `localhost:8081`,
+   `:8080`, `:8081`, plus bare `8080`/`8081` tokens (to catch YAML's
+   `port: 8080` style, which has no literal `:8080` substring) and
+   confirmed zero test-resource files exist to check. Found exactly 2
+   conflicts among 13 total local ports (5 infra containers + 9 wait, 9
+   services + `originex_dev`'s default — see the port table in the
+   commit summary), everything else already clean.
+2. Found two references that turned out **not** to be affected and were
+   correctly left alone: `pom.xml`'s Jib plugin `<port>8080</port>`
+   (generic container-image EXPOSE metadata shared by every service,
+   unrelated to any service's actual `server.port` or to local
+   docker-compose networking) and `infra/helm/originex-service/values.yaml`'s
+   4× `port: 8080` (generic Kubernetes `ClusterIP`/probe port template —
+   each service gets its own pod/service in K8s, so there's no host-port
+   collision concept there at all).
+3. Also found `schema-registry-url: http://localhost:8081` declared in
+   `lms-service` and `template-service`'s `application.yml`, plus the
+   same default hardcoded in `libs/spring-boot-starter/.../OriginexProperties.java`
+   — traced all three: none are actually read by any Kafka
+   producer/consumer/serializer anywhere in the codebase (protobuf/schema-registry
+   wiring isn't implemented yet, consistent with `CLAUDE_ANALYSIS.md`'s
+   earlier finding). This confirmed schema-registry was the lower-risk
+   side of the 8081 conflict to move — zero functional runtime impact
+   today, versus `customer-service` which is the actively-used business
+   API already exercised in this file's own smoke-test commands.
+4. Implemented: `template-service` → `8089`; `schema-registry`'s
+   **host-side** port mapping only → `8090:8081` (container-internal
+   listener, healthcheck `CMD` target, and `kafka-ui`'s
+   `KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081` all
+   left untouched, exactly as instructed — none of those are host-facing).
+   Updated the two `schema-registry-url` declarations and the starter's
+   default to `8090` for consistency, and `README.md`'s Quick Start curl
+   example to `8089`.
+5. **Re-search confirmed complete**: re-ran the same repo-wide search
+   after editing — every remaining `8080`/`8081` reference is either
+   kafka-ui (unchanged, correct), customer-service (unchanged, correct),
+   a Docker-internal URL (unchanged, correct per instruction), the
+   frozen `CLAUDE_HANDOVER.md` historical snapshot (intentionally never
+   edited, consistent with how this document has been treated throughout
+   Phase 0 — corrections go in `CLAUDE_ANALYSIS.md`, not into the
+   original artifact), or the Jib/Helm generic templates confirmed
+   unrelated in step 2.
+6. **Verified the fix actually works**, without relying on a full
+   `docker compose up` (blocked on this machine by the pre-existing,
+   unrelated Postgres-5432 and Kafka-KRaft issues documented earlier):
+   - `docker compose -f dev/docker-compose.yml config` — valid, and the
+     resolved config shows exactly `target: 8081` / `published: "8090"`
+     for schema-registry, confirming the edit parses and resolves
+     correctly.
+   - **Directly proved the conflict is resolved**, independent of
+     whether the full stack can boot on this machine: started a
+     throwaway container binding host port 8081 (simulating
+     `customer-service`), then attempted `docker run -p 8081:8081
+     confluentinc/cp-schema-registry:7.7.1` (the **old** mapping) —
+     failed exactly as expected: `Bind for 0.0.0.0:8081 failed: port is
+     already allocated`. Then attempted `docker run -p 8090:8081
+     confluentinc/cp-schema-registry:7.7.1` (the **new** mapping) — port
+     bound successfully; the container exited afterward only because
+     this minimal isolated test didn't pass the Kafka bootstrap-servers
+     env var (confirmed via `docker logs`: `one of
+     (SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL,
+     SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS) is required`) — an
+     unrelated, expected outcome for this isolated test, not a port
+     conflict.
+   - `mvn compile` — full reactor, BUILD SUCCESS after the
+     `OriginexProperties.java` and two `application.yml` edits.
+   - All test containers removed afterward.

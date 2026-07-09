@@ -28,7 +28,11 @@ public class OriginexProperties {
     }
 
     public static class KafkaProperties {
-        private String schemaRegistryUrl = "http://localhost:8081";
+        // Default matches dev/docker-compose.yml's schema-registry host port
+        // mapping (8090:8081) — the container listens on 8081 internally,
+        // but this default is a host-side URL for services run outside
+        // Docker (e.g. `mvn spring-boot:run`), so it must use the host port.
+        private String schemaRegistryUrl = "http://localhost:8090";
 
         public String getSchemaRegistryUrl() { return schemaRegistryUrl; }
         public void setSchemaRegistryUrl(String schemaRegistryUrl) { this.schemaRegistryUrl = schemaRegistryUrl; }

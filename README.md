@@ -27,7 +27,7 @@ mvn spring-boot:run
 
 ### 4. Test an endpoint
 ```bash
-curl -X POST http://localhost:8080/v1/samples \
+curl -X POST http://localhost:8089/v1/samples \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: 550e8400-e29b-41d4-a716-446655440000" \
   -d '{"name": "Test Sample", "description": "Hello Originex", "amount": "10000.00"}'

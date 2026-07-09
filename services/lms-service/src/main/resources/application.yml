@@ -67,7 +67,7 @@ originex:
     header-name: X-Tenant-Id
     enforce: true
   kafka:
-    schema-registry-url: http://localhost:8081
+    schema-registry-url: http://localhost:8090
     topics:
       disbursement-requested: originex.los.applications.events
       loan-events: originex.lms.loans.events

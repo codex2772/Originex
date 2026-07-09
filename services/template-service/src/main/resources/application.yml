@@ -58,8 +58,11 @@ spring:
       timeout: 3000ms
 
 # ─── Server ───
+# Port 8089 — next available per the project's own service-port convention
+# (see CLAUDE_HANDOVER.md "Adding a New Service" step 4). Was 8080, which
+# collided with kafka-ui's docker-compose port mapping.
 server:
-  port: 8080
+  port: 8089
   shutdown: graceful
 
 # ─── Actuator ───
@@ -86,7 +89,7 @@ originex:
     header-name: X-Tenant-Id
     enforce: true
   kafka:
-    schema-registry-url: http://localhost:8081
+    schema-registry-url: http://localhost:8090
 
 # ─── Logging ───
 logging:
