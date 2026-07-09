@@ -50,6 +50,7 @@ public class Loan {
     private LocalDate maturityDate;
     private LocalDate nextDueDate;
     private LocalDate lastPaymentDate;
+    private LocalDate lastAccrualDate; // Date through which interest has been accrued (null until first disbursement)
 
     // Delinquency
     private int dpd;
@@ -131,6 +132,8 @@ public class Loan {
         if (this.firstDisbursementDate == null) {
             this.firstDisbursementDate = LocalDate.now();
             this.maturityDate = this.firstDisbursementDate.plusMonths(this.tenureMonths);
+            // Interest accrual starts from the activation (first disbursement) date.
+            this.lastAccrualDate = this.firstDisbursementDate;
         }
         this.updatedAt = Instant.now();
     }
@@ -194,6 +197,24 @@ public class Loan {
         );
     }
 
+    /**
+     * Adds accrued interest to the outstanding interest balance.
+     *
+     * <p><b>v1 scope (Interest Accrual):</b> the daily accrual scheduler only
+     * feeds this method for loans in {@code ACTIVE} status (enforced by the
+     * accrual eligibility query, not by {@link #assertActive()} — which also
+     * permits {@code NPA} for repayment). NPA interest is therefore <b>not</b>
+     * accrued in v1.
+     *
+     * <p><b>Deferred (future) — NPA / regulatory interest treatment:</b> RBI
+     * norms require that once a loan is classified NPA, interest income
+     * recognition stops but interest may still accrue into an interest-suspense
+     * / memorandum account (not recognised as income). Implementing that will
+     * require: interest-suspense accounts, separate ledger postings, and
+     * reversal/reclassification logic on NPA transition and on cure. This is
+     * intentionally out of scope for v1 and must be revisited before NPA loans
+     * are handled for income recognition.
+     */
     public void accrueInterest(Money accruedAmount) {
         assertActive();
         this.outstandingInterest = this.outstandingInterest.add(accruedAmount);
@@ -295,6 +316,7 @@ public class Loan {
     public LocalDate getMaturityDate() { return maturityDate; }
     public LocalDate getNextDueDate() { return nextDueDate; }
     public LocalDate getLastPaymentDate() { return lastPaymentDate; }
+    public LocalDate getLastAccrualDate() { return lastAccrualDate; }
     public int getDpd() { return dpd; }
     public int getMaxDpd() { return maxDpd; }
     public String getAssetClassification() { return assetClassification; }
@@ -325,6 +347,7 @@ public class Loan {
     public void setCurrency(String s) { this.currency = s; }
     public void setMaturityDate(LocalDate d) { this.maturityDate = d; }
     public void setNextDueDate(LocalDate d) { this.nextDueDate = d; }
+    public void setLastAccrualDate(LocalDate d) { this.lastAccrualDate = d; }
     public void setDpd(int i) { this.dpd = i; }
     public void setMaxDpd(int i) { this.maxDpd = i; }
     public void setAssetClassification(String s) { this.assetClassification = s; }

@@ -82,6 +82,39 @@ class LoanTest {
     }
 
     @Nested
+    @DisplayName("Interest Accrual")
+    class InterestAccrual {
+
+        @Test
+        void shouldSeedLastAccrualDateOnActivation() {
+            Loan loan = createActiveLoan();
+            // confirmDisbursement sets lastAccrualDate = firstDisbursementDate (today)
+            assertThat(loan.getLastAccrualDate()).isEqualTo(java.time.LocalDate.now());
+        }
+
+        @Test
+        void shouldIncreaseOutstandingInterestWhenAccruing() {
+            Loan loan = createActiveLoan();
+            loan.accrueInterest(Money.of("1234.5678", "INR"));
+            assertThat(loan.getOutstandingInterest().getAmount()).isEqualByComparingTo("1234.5678");
+        }
+
+        @Test
+        void shouldRejectAccrualOnNonActiveLoan() {
+            // Fresh loan is CREATED (not ACTIVE/NPA)
+            Loan loan = Loan.createFromApplication(
+                    TENANT, CUSTOMER, APPLICATION, "PL",
+                    Money.of("100000", "INR"),
+                    new BigDecimal("10"), "FIXED",
+                    12, Money.of("8792", "INR"));
+
+            assertThatThrownBy(() -> loan.accrueInterest(Money.of("100", "INR")))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("not active");
+        }
+    }
+
+    @Nested
     @DisplayName("Repayment Waterfall: Charges → Interest → Principal")
     class RepaymentWaterfall {
 
