@@ -234,9 +234,15 @@ public class LoanApplicationService implements LoanApplicationUseCase {
                             currency, breResult.riskGrade())
                             .getBytes(StandardCharsets.UTF_8));
         } else {
-            // REFER_TO_UNDERWRITER — leave in IN_PROGRESS for manual review
+            // REFER_TO_UNDERWRITER — move to REFERRED so the application becomes a
+            // queryable manual-review case. Previously it was left in IN_PROGRESS,
+            // which had no exit path (neither auto-decisioned nor actionable).
+            // assignedTo is null at auto-referral time; assignment/queueing is out
+            // of scope. No new event is published — CreditCheckCompleted was already
+            // emitted earlier in this method.
+            app.refer(null);
             saved = applicationRepository.save(app);
-            log.info("Application referred to underwriter: appId={}, reason={}", applicationId, breResult.summary());
+            log.info("Application referred for manual review: appId={}, reason={}", applicationId, breResult.summary());
         }
 
         return saved;

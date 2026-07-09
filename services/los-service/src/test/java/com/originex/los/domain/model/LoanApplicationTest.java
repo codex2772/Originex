@@ -185,6 +185,54 @@ class LoanApplicationTest {
     }
 
     @Nested
+    @DisplayName("Referral (manual review)")
+    class Referral {
+
+        @Test
+        void shouldReferFromInProgress() {
+            LoanApplication app = createSubmittedApplication();
+            app.startProcessing();
+
+            app.refer(null);
+
+            assertThat(app.getStatus()).isEqualTo(ApplicationStatus.REFERRED);
+            assertThat(app.getStatus().isTerminal()).isFalse();
+        }
+
+        @Test
+        void shouldApproveFromReferred() {
+            LoanApplication app = createSubmittedApplication();
+            app.startProcessing();
+            app.recordCreditCheck(680, "CIBIL", "REF-REFER");
+            app.refer(null);
+
+            app.approve("Manual review passed");
+
+            assertThat(app.getStatus()).isEqualTo(ApplicationStatus.APPROVED);
+        }
+
+        @Test
+        void shouldRejectFromReferred() {
+            LoanApplication app = createSubmittedApplication();
+            app.startProcessing();
+            app.refer(null);
+
+            app.reject("Manual review declined");
+
+            assertThat(app.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+            assertThat(app.getStatus().isTerminal()).isTrue();
+        }
+
+        @Test
+        void shouldNotReferFromSubmitted() {
+            LoanApplication app = createSubmittedApplication();
+            assertThatThrownBy(() -> app.refer(null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Invalid transition");
+        }
+    }
+
+    @Nested
     @DisplayName("Withdrawal")
     class Withdrawal {
 
