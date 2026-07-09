@@ -43,10 +43,14 @@ public class LmsEventConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(LmsEventConsumer.class);
 
-    // Standard GL account IDs (would be resolved from config/chart of accounts in production)
-    private static final UUID POOL_ACCOUNT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final UUID INTEREST_INCOME_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
-    private static final UUID INTEREST_RECEIVABLE_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    // Standard GL account IDs (would be resolved from config/chart of accounts in production).
+    // Seeded by V2__seed_chart_of_accounts_and_inbox_table.sql for the default tenant
+    // (00000000-0000-0000-0000-000000000001). Package-private (not private) so
+    // LmsEventConsumerBootstrapTest can assert the seed migration stays in sync with these
+    // constants instead of duplicating the UUID literals a third time.
+    static final UUID POOL_ACCOUNT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    static final UUID INTEREST_INCOME_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    static final UUID INTEREST_RECEIVABLE_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
     private final LedgerUseCase ledgerUseCase;
     private final AccountRepository accountRepository;
