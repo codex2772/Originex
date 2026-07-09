@@ -11,6 +11,41 @@ expected. Each step below states which commit closes it.
 
 ---
 
+## Known Local-Environment Blockers (not repository defects)
+
+Two issues surfaced while running this checklist that are specific to the
+machine it was run on, not to `dev/docker-compose.yml` or any other
+committed file. They are documented here for anyone hitting the same thing,
+and are **intentionally not fixed** — `docker-compose.yml` has not been
+modified for either. Treat both as environment-specific unless a second,
+independent machine reproduces them, which would upgrade them to a real
+repository issue.
+
+1. **`originex-postgres` fails to start: "address already in use" on
+   5432.** Caused by a native PostgreSQL service already installed and
+   running on that machine (`/Library/PostgreSQL/18/bin/postgres`),
+   permanently bound to host port 5432, entirely outside Docker. Any
+   machine with a local Postgres install (native, Homebrew, or another
+   unrelated Docker Compose project) already using 5432 will hit this.
+   Workaround used for verification only: a throwaway `postgres:16-alpine`
+   container on an alternate host port (e.g. `-p 15432:5432`), never
+   part of the repository.
+
+2. **`originex-kafka` (`cp-kafka:7.7.1`, KRaft mode) exits immediately**
+   with `Error while writing meta.properties file
+   /tmp/kraft-combined-logs: .../bootstrap.checkpoint.tmp`. Reproduced
+   identically against both a stale and a freshly-recreated
+   `dev_kafka_data` volume, which rules out stale volume state as the
+   cause — it appears to be a Docker Desktop / host-filesystem interaction
+   with this specific image's KRaft combined-log directory on that
+   machine. No further root-causing has been done; flagged here rather
+   than guessed at.
+
+Full details and the exact commands/output are in the "Baseline Log" →
+BEFORE section near the end of this document.
+
+---
+
 ## 1. Docker Compose Startup
 
 ```bash
@@ -147,6 +182,7 @@ level without needing all 9 services up.
 |---|---|---|---|
 | BEFORE | 2026-07-09 | `docker compose up` + Flyway migration replay | See findings below |
 | AFTER commit 1 | 2026-07-09 | ledger-service V1+V2 Flyway replay | Migrations apply cleanly; accounts + inbox_events verified (see below) |
+| AFTER commit 2 | 2026-07-09 | payment-service V1+V2 Flyway replay | Migrations apply cleanly; outbox_events + inbox_events verified (see below) |
 
 ### BEFORE — actual findings from running the checklist, not just reading code
 
@@ -221,3 +257,58 @@ against the seeded accounts. The direct-SQL verification above proves the schema
 and seed data are correct; proving the consumer's runtime behavior against a live
 broker requires an environment without this machine's local port/Kafka
 conflicts (any other machine, or CI).
+
+### AFTER commit 2 — payment-service outbox/inbox migrations
+
+Followed the same reproduce-then-fix process as commit 1:
+
+1. **Reproduced first**: applied `V1__create_payment_schema.sql` alone
+   against a clean `postgres:16-alpine`. Unlike ledger's V1, it applied
+   without error (`V1_EXIT:0`) — no partitioning-style bug here. Confirmed
+   by listing tables afterward that only `payment_orders` and
+   `nach_mandates` exist — `outbox_events` and `inbox_events` are genuinely
+   absent, exactly as reported. Since V1 itself is not broken, only a new
+   migration was needed; V1 was not touched.
+
+2. **Verified required columns against the actual JPA entities** before
+   writing SQL: `OutboxEventJpaEntity` (`libs/spring-boot-starter`) maps
+   `event_id, aggregate_type, aggregate_id, event_type, tenant_id, payload,
+   metadata, status, created_at, published_at` (10 columns).
+   `InboxEventJpaEntity` maps `event_id, event_type, processed_at` (3
+   columns). Also compared column-for-column against
+   `PaymentOrderJpaEntity`/`NachMandateJpaEntity` vs. V1's existing
+   `payment_orders`/`nach_mandates` tables — already an exact match, no
+   drift there.
+
+3. **New finding**: cross-checking `published_at` against every other
+   service's `outbox_events` table surfaced that `customer-service`,
+   `los-service`, and `lms-service` all correctly include it, but
+   **`ledger-service`'s `outbox_events` (from V1, unaffected by commit 1's
+   fix) is missing it** — with `ddl-auto: validate` set on every service
+   (confirmed across all 9 `application.yml` files), this means
+   ledger-service likely also fails Hibernate schema validation at boot,
+   independent of the account-seeding fix already shipped. Not fixed here
+   (out of commit-2 scope: payment-service only) — flagged for a follow-up.
+
+4. Added `V2__create_outbox_and_inbox_tables.sql`, matching the correct
+   3-service pattern exactly (including `published_at` and the
+   `idx_outbox_pending` partial index), plus `inbox_events` matching the
+   shape used everywhere else. No RLS on either table, consistent with
+   every other service — `outbox_events`/`inbox_events` are never
+   RLS-protected anywhere in this codebase.
+
+5. **Re-verified end to end** against the same clean Postgres: V1 → V2
+   both apply (`V1_EXIT:0`, `V2_EXIT:0`); `outbox_events` has all 10
+   expected columns plus the `idx_outbox_pending` index;
+   `inbox_events` has the expected 3 columns; `pg_class` confirms
+   `payment_orders`/`nach_mandates` still have RLS forced
+   (`relrowsecurity=t, relforcerowsecurity=t`) and `outbox_events`/
+   `inbox_events` correctly have neither (`f, f`).
+
+Not verified in this pass, for the same pre-existing reasons as commit 1:
+booting payment-service's actual Spring context to observe Hibernate's
+`ddl-auto: validate` pass at runtime (blocked by this sandbox's Maven
+registry access for pinned `postgresql`/`testcontainers` versions, and by
+the port-5432/Kafka findings above for a live end-to-end run). The
+column-for-column comparison against the real JPA entity mappings above is
+the substitute verification, same approach as commit 1.
