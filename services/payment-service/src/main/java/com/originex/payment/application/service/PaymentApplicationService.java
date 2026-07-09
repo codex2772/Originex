@@ -42,10 +42,13 @@ public class PaymentApplicationService implements PaymentUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentApplicationService.class);
 
-    // RTGS threshold: ₹2 lakhs minimum
-    private static final BigDecimal RTGS_THRESHOLD = new BigDecimal("200000");
-    // IMPS threshold: ₹5 lakhs max (regulatory limit)
-    private static final BigDecimal IMPS_MAX = new BigDecimal("500000");
+    // Payment rail auto-selection band boundaries — see selectRail() below for
+    // the full business rule these implement. IMPS_MIN_AMOUNT is also the
+    // point below which NEFT is used; IMPS_MAX_AMOUNT is also the point above
+    // which RTGS is used, so the three rails partition the amount range with
+    // no overlap and no gap.
+    private static final BigDecimal IMPS_MIN_AMOUNT = new BigDecimal("200000"); // ₹2,00,000
+    private static final BigDecimal IMPS_MAX_AMOUNT = new BigDecimal("500000"); // ₹5,00,000
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final NachMandateRepository nachMandateRepository;
@@ -267,19 +270,29 @@ public class PaymentApplicationService implements PaymentUseCase {
     }
 
     /**
-     * Auto-select payment rail:
-     * - RTGS: >= ₹2 Lakhs (high-value, same day settlement)
-     * - IMPS: < ₹5 Lakhs and urgent (instant, 24x7)
-     * - NEFT: default (settled in batches)
+     * Auto-selects a payment rail by amount when no explicit {@code preferred}
+     * rail is given. An explicit preferred rail always wins over auto-selection,
+     * regardless of amount.
+     *
+     * <p>Business rule (three non-overlapping bands, no gap):
+     * <ul>
+     *   <li>amount &gt; ₹5,00,000 → RTGS — high-value, no upper cap</li>
+     *   <li>₹2,00,000 ≤ amount ≤ ₹5,00,000 → IMPS — instant 24x7, capped at ₹5L</li>
+     *   <li>amount &lt; ₹2,00,000 → NEFT — no minimum, batched settlement</li>
+     * </ul>
      */
-    private PaymentRail selectRail(String preferred, Money amount) {
+    // Package-private (not private) so PaymentApplicationServiceTest can call it
+    // directly instead of reconstructing behavior through the full
+    // initiateDisbursement() flow, which would need repository/adapter mocks
+    // that this pure amount-to-rail decision doesn't otherwise need.
+    PaymentRail selectRail(String preferred, Money amount) {
         if (preferred != null && !preferred.isBlank()) {
             try { return PaymentRail.valueOf(preferred.toUpperCase()); }
             catch (IllegalArgumentException ignored) {}
         }
         BigDecimal amountValue = amount.getAmount();
-        if (amountValue.compareTo(RTGS_THRESHOLD) >= 0) return PaymentRail.RTGS;
-        if (amountValue.compareTo(IMPS_MAX) <= 0) return PaymentRail.IMPS;
+        if (amountValue.compareTo(IMPS_MAX_AMOUNT) > 0) return PaymentRail.RTGS;
+        if (amountValue.compareTo(IMPS_MIN_AMOUNT) >= 0) return PaymentRail.IMPS;
         return PaymentRail.NEFT;
     }
 

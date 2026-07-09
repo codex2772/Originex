@@ -186,6 +186,7 @@ level without needing all 9 services up.
 | AFTER commit 1 | 2026-07-09 | ledger-service V1+V2 Flyway replay | Migrations apply cleanly; accounts + inbox_events verified (see below) |
 | AFTER commit 2 | 2026-07-09 | payment-service V1+V2 Flyway replay | Migrations apply cleanly; outbox_events + inbox_events verified (see below) |
 | AFTER commit 3 | 2026-07-09 | `dev/init-scripts/init-databases.sql` replay | All 9 service databases created and connectable (see below) |
+| AFTER commit 4 | 2026-07-09 | `PaymentApplicationService.selectRail()` unit tests | 13/13 pass — boundary values and explicit override all correct (see below) |
 
 ### BEFORE — actual findings from running the checklist, not just reading code
 
@@ -351,3 +352,48 @@ the substitute verification, same approach as commit 1.
 No documentation outside this file and `CLAUDE_ANALYSIS.md` referenced the
 old database list (`docs/architecture/05-database-strategy/data-architecture.md`
 checked directly — no match), so no other doc changes were needed.
+
+### AFTER commit 4 — payment rail selection
+
+Investigated before writing any code, per the requested process:
+
+1. **Existing rail adapters**: read `NeftRailAdapter`/`RtgsRailAdapter`/`ImpsRailAdapter`
+   in full. Found `RtgsRailAdapter`'s own Javadoc claimed RTGS is "for
+   high-value transfers >= ₹2 lakhs" (no upper bound) — in tension with
+   routing RTGS only above ₹5L. No dedicated payment business-rule doc
+   exists anywhere in `docs/architecture/`, no README for payment-service,
+   and no existing test encoded expected rail-selection behavior, so the
+   adapter Javadocs were the only documented intent available. Flagged
+   this conflict to the user rather than picking a side — confirmed:
+   implement the originally-proposed thresholds, and correct
+   `RtgsRailAdapter`'s Javadoc (comment only) so it stops contradicting
+   the fixed behavior.
+2. **DTO/API check**: confirmed `preferredRail` is a real, working
+   explicit override (`PaymentUseCase.InitiateDisbursementCommand`,
+   comment: `"NEFT, RTGS, IMPS — null = auto-select"`), reachable via
+   `PaymentController` — this is what the override tests below exercise.
+3. Implemented the confirmed business rule in
+   `PaymentApplicationService.selectRail()`: `>₹5,00,000→RTGS`,
+   `₹2,00,000–₹5,00,000→IMPS`, `<₹2,00,000→NEFT`. Renamed the misleading
+   `RTGS_THRESHOLD`/`IMPS_MAX` constants to `IMPS_MIN_AMOUNT`/
+   `IMPS_MAX_AMOUNT` and documented the three-way rule directly on the
+   method Javadoc, per the request to document the business rule near the
+   selection logic.
+4. Added `PaymentApplicationServiceTest` (13 tests: the 5 requested
+   boundary values plus a large-amount sanity check and a blank-preferred
+   case under `AutoSelection`; explicit-override tests for all 4 rails
+   including case-insensitivity and a genuinely-unrecognized preferred
+   rail falling back to auto-select, under `ExplicitOverride`).
+5. **Verification**: `mvn test` blocked by the same pre-existing Maven
+   registry issue as commits 1–2 (confirmed unrelated to this change —
+   same root cause). Compiled the test class directly via `javac` against
+   cached JUnit/AssertJ jars plus the project's own compiled classes, then
+   executed all 13 `@Test` methods through a small reflection-based
+   runner (JUnit itself isn't invoked, but every assertion in every test
+   method genuinely runs against the real `PaymentApplicationService`
+   code): **13/13 PASS**. Full reactor `mvn compile` also green.
+
+Scope check: only `PaymentApplicationService.java` (logic + constants +
+Javadoc), `RtgsRailAdapter.java` (Javadoc only, explicitly approved for
+this reason), and the new test file were touched. No other adapter, no
+unrelated payment flow.
