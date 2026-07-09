@@ -194,6 +194,7 @@ level without needing all 9 services up.
 | AFTER commit 4 | 2026-07-09 | `PaymentApplicationService.selectRail()` unit tests | 13/13 pass — boundary values and explicit override all correct (see below) |
 | AFTER commit 5 | 2026-07-09 | Full repo-wide port reference audit + docker-compose replay | Zero remaining `:8080`/`:8081` conflicts; schema-registry container verified reachable on new host port (see below) |
 | AFTER commit 6 | 2026-07-09 | OutboxPoller routing + topics.yaml replay | 16/16 KafkaTopic documents parse correctly; domain-label convention holds for all 4 new topics (see below) |
+| AFTER commit 7 | 2026-07-09 | ledger V1→V2→V3 replay + schema regression test | outbox_events has all 10 entity-mapped columns; regression test fails without V3, passes with it (see below) |
 
 ### BEFORE — actual findings from running the checklist, not just reading code
 
@@ -519,3 +520,57 @@ repository-wide re-search after, per the requested process:
    `customer`→`customer`, `bre`→`bre`, `partner`→`partner`,
    `notifications`→`notifications` (matching its existing sibling
    commands topic exactly). `mvn compile` — full reactor, BUILD SUCCESS.
+
+### AFTER commit 7 — align ledger outbox_events with shared entity
+
+Closes the last open Phase 0 backlog item (CLAUDE_ANALYSIS.md §9).
+
+1. **Confirmed the exact gap and its severity** before choosing an
+   approach: `OutboxEventJpaEntity` (the shared entity every service uses)
+   maps 10 `@Column`s; ledger's `outbox_events` (from V1) declared only 9,
+   missing `published_at`. Traced `published_at` usage in the starter —
+   it's not cosmetic: `OutboxPoller.markPublished()` issues
+   `UPDATE ... SET published_at = :now` on every successfully published
+   event, and the daily cleanup runs
+   `DELETE ... WHERE published_at < :before`. So ledger's outbox was
+   doubly broken: `ddl-auto: validate` (set on all 9 services) fails at
+   boot, and even with validation off it would fail at runtime on the
+   first published `originex.ledger.JournalEntryPosted`.
+2. **Approach**: ledger's V1 applies cleanly on a real Postgres 16
+   (verified back in commit 1 — all 8 tables including `outbox_events`
+   were created), so this is not a "confirmed migration failure that
+   can't be addressed safely otherwise." Per the project rule, V1 is left
+   untouched and the fix is an additive `V3__add_outbox_published_at.sql`
+   (`ALTER TABLE outbox_events ADD COLUMN published_at TIMESTAMP WITH TIME
+   ZONE`). Nullable, no default — matching the entity's
+   `@Column(name = "published_at")` (no `nullable=false`) and the other
+   three services' `published_at TIMESTAMP WITH TIME ZONE` exactly.
+3. **Verified the final schema matches the entity exactly**: replayed
+   V1→V2→V3 against a clean `postgres:16-alpine` and dumped
+   `\d outbox_events` — all 10 columns present with the right types and
+   `published_at` nullable. The only difference from customer/los/lms is
+   physical column *order* (`published_at` last, because it's an ALTER
+   rather than being in the original CREATE) — harmless, since Hibernate
+   `validate` matches columns by name, not position; documented in the
+   migration's own header comment.
+4. **ddl-auto validation, conceptually**: `validate` checks that every
+   mapped `@Column` exists in the table by name. With all 10 columns now
+   present (confirmed by the `\d` dump), validation of
+   `OutboxEventJpaEntity` against ledger's `outbox_events` now passes.
+   Full Spring-context startup can't be exercised on this machine (the
+   pre-existing Postgres-5432 and Kafka-KRaft local blockers documented
+   above), so this is verified at the schema level — the exact thing
+   `validate` inspects — rather than by booting the app. `InboxEventJpaEntity`
+   was already satisfied by commit 1's `inbox_events` table.
+5. **Regression test** (`OutboxSchemaMigrationTest`): reflects over the
+   shared entity's `@Column` names and asserts each appears in ledger's
+   migration SQL — encoding the real "ledger outbox schema ⊇ entity
+   columns" invariant rather than hardcoding a column list. Proved it
+   genuinely guards the regression: with `V3` temporarily moved aside the
+   test **fails** specifically on `published_at`, and **passes** once
+   restored. Same static-file-content style as commit 1's
+   `LmsEventConsumerBootstrapTest`, since there's still no
+   Testcontainers/integration-test harness (Phase 4). Executed via the
+   same javac-plus-reflection-runner path used in earlier commits, as
+   `mvn test` remains blocked by the pre-existing private-registry issue.
+   Full reactor `mvn compile` — BUILD SUCCESS.
