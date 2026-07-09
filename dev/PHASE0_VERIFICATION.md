@@ -65,12 +65,14 @@ databases the real services expect (`originex_customer`, `originex_los`,
 `originex_lms`, `originex_ledger`, `originex_partner`, `originex_payment`,
 `originex_notification`, `originex_bre`, `originex_template`).
 
-**Known gap until commit 3 ("Fix dev database initialization"):**
-`originex_bre`, `originex_partner`, `originex_notification` do not exist —
-`dev/init-scripts/init-databases.sql` currently creates a different set
-(includes `originex_collections`/`originex_iam` for services that don't
-exist yet as Maven modules). The script reports these as `[KNOWN GAP]`,
-not `[FAIL]`, until commit 3 lands.
+**RESOLVED — Phase 0 commit 3 ("Fix dev database initialization").**
+`originex_bre`, `originex_partner`, `originex_notification` were missing
+and `originex_collections`/`originex_iam` were stale entries for services
+with no Maven module. `dev/init-scripts/init-databases.sql` now creates
+exactly the 9 databases above. Verified against a clean Postgres 16: all 9
+`CREATE DATABASE`/`GRANT` statements apply cleanly, and connecting as the
+`originex` user to each of the 9 by name succeeds (see "AFTER commit 3"
+below).
 
 ## 3. Flyway Migration Success
 
@@ -183,6 +185,7 @@ level without needing all 9 services up.
 | BEFORE | 2026-07-09 | `docker compose up` + Flyway migration replay | See findings below |
 | AFTER commit 1 | 2026-07-09 | ledger-service V1+V2 Flyway replay | Migrations apply cleanly; accounts + inbox_events verified (see below) |
 | AFTER commit 2 | 2026-07-09 | payment-service V1+V2 Flyway replay | Migrations apply cleanly; outbox_events + inbox_events verified (see below) |
+| AFTER commit 3 | 2026-07-09 | `dev/init-scripts/init-databases.sql` replay | All 9 service databases created and connectable (see below) |
 
 ### BEFORE — actual findings from running the checklist, not just reading code
 
@@ -312,3 +315,39 @@ registry access for pinned `postgresql`/`testcontainers` versions, and by
 the port-5432/Kafka findings above for a live end-to-end run). The
 column-for-column comparison against the real JPA entity mappings above is
 the substitute verification, same approach as commit 1.
+
+### AFTER commit 3 — dev database initialization
+
+1. **Verified the target list against the actual Maven reactor**, not
+   assumed: `grep`'d `<modules>` in the root `pom.xml` (9 services, no
+   `collections-service` or `iam-service` module exists) and cross-checked
+   every service's `spring.datasource.url` in `application.yml` directly.
+   All 9 resolve to `originex_customer`, `originex_los`, `originex_lms`,
+   `originex_ledger`, `originex_partner`, `originex_payment`,
+   `originex_notification`, `originex_bre`, `originex_template` — exactly
+   the list requested, confirming `template-service` still needs its
+   database (it has both a live datasource config and its own
+   `V1__create_template_schema.sql`, so "only if still required" resolves
+   to yes).
+
+2. Rewrote `dev/init-scripts/init-databases.sql`: added the 3 missing
+   databases (`originex_bre`, `originex_partner`, `originex_notification`),
+   removed the 2 stale ones with no corresponding Maven module
+   (`originex_collections`, `originex_iam`), kept the other 6 unchanged.
+
+3. **Reproduced clean, then re-verified** against a fresh
+   `postgres:16-alpine` (same throwaway-container approach as commits 1–2):
+   - Ran the fixed script exactly as `docker-entrypoint-initdb.d` would
+     (`psql -v ON_ERROR_STOP=1 -f init-databases.sql`) — all 9
+     `CREATE DATABASE`/`GRANT` pairs succeeded (`INIT_EXIT:0`).
+   - Listed databases afterward: all 9 expected names present (plus
+     Postgres's own `originex_dev` from `POSTGRES_DB`, unrelated to this
+     script).
+   - **Connected as the `originex` user to each of the 9 databases by
+     name** (`psql -U originex -d <db> -c "SELECT current_database();"`),
+     the same thing each service's JDBC URL does — all 9 succeeded, no
+     missing-database errors.
+
+No documentation outside this file and `CLAUDE_ANALYSIS.md` referenced the
+old database list (`docs/architecture/05-database-strategy/data-architecture.md`
+checked directly — no match), so no other doc changes were needed.
