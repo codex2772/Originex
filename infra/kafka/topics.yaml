@@ -3,6 +3,29 @@
 # Applied to Kubernetes cluster where Strimzi Kafka operator is installed.
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ─── Customer Topics ───
+# Actively used today: customer-service publishes here via OutboxPublisher
+# (CustomerRegistered, KYCCompleted), and OutboxPoller.resolveTopicFromEventType()
+# has always routed originex.customer.* events here — this CRD was simply
+# missing. Partitions/retention match the los/payments baseline tier
+# (comparable-importance core domain event).
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.customer.customers.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: customer
+spec:
+  partitions: 32
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
 # ─── LOS Topics ───
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
@@ -34,6 +57,55 @@ spec:
   replicas: 3
   config:
     retention.ms: "604800000"       # 7 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# ─── BRE Topics ───
+# RESERVED / pre-provisioned — bre-service does not publish via outbox yet
+# (confirmed: no OutboxPublisher usage anywhere in bre-service as of Phase 0).
+# OutboxPoller.resolveTopicFromEventType() now routes originex.bre.* events
+# here so a future publisher lands correctly on day one instead of the
+# unrouted-events fallback. Same precedent as the pre-existing "collections"
+# topic below, which is provisioned with no collections-service module yet.
+# Name/partitions follow the los/lms/ledger naming and sizing convention:
+# "evaluations" mirrors EvaluationResult, bre-service's actual aggregate.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.bre.evaluations.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: bre
+spec:
+  partitions: 16
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# ─── Partner Integration Topics ───
+# RESERVED / pre-provisioned — partner-integration-service does not publish
+# via outbox yet (confirmed: no OutboxPublisher usage anywhere in the
+# service as of Phase 0). Routed the same way as BRE above, for the same
+# reason. "integration-requests" mirrors the service's own integration_requests
+# audit table directly, rather than inventing an unrelated noun.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.partner.integration-requests.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: partner
+spec:
+  partitions: 16
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
     cleanup.policy: delete
     compression.type: lz4
     min.insync.replicas: "2"
@@ -158,6 +230,34 @@ spec:
   replicas: 3
   config:
     retention.ms: "259200000"       # 3 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# RESERVED / pre-provisioned — notification-service does not publish via
+# outbox yet (confirmed: no OutboxPublisher usage anywhere in the service
+# as of Phase 0). Pairs with the commands topic above (commands in, events
+# out); reuses "requests" as the noun rather than inventing a new one, and
+# keeps the "notifications" (plural) domain label to match its sibling
+# above, even though OutboxPoller's routing prefix for this domain is
+# singular (originex.notification.*) — that mismatch already existed
+# between this file's "notifications" and the domain prefixes used
+# elsewhere (e.g. "customer" is singular in both places; "notifications"
+# was already plural here before this change), so this follows the
+# existing topic's convention rather than introducing a new one.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.notifications.requests.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: notifications
+spec:
+  partitions: 16
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
     cleanup.policy: delete
     compression.type: lz4
     min.insync.replicas: "2"

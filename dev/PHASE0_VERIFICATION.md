@@ -131,11 +131,14 @@ is reachable and lists whatever topics currently exist. Note
 local docker-compose broker auto-creates topics lazily on first publish, so
 an empty topic list on a fresh stack is expected, not a failure.
 
-**Known gap (commit 7, "Add/verify missing Kafka topic CRDs"):**
-`originex.customer.customers.events` — the topic `customer-service`
-publishes to and `notification-service` consumes from — has no CRD in
-`topics.yaml` at all. Irrelevant locally (auto-create covers it), relevant
-once a real Strimzi cluster is targeted.
+**RESOLVED — Phase 0 commit 6.** `originex.customer.customers.events` —
+the topic `customer-service` publishes to and `notification-service`
+consumes from — had no CRD in `topics.yaml` at all. Was irrelevant
+locally (Kafka's auto-create default covers it), but would have been
+missing once a real Strimzi cluster was targeted. Now provisioned, along
+with 3 reserved topics for bre/partner/notification (see commit 6's
+findings below — that commit absorbed the originally-separate "commit 7"
+since routing and topic provisioning are two halves of the same fix).
 
 ## 6. Customer → LOS → LMS → Ledger Smoke Flow
 
@@ -190,6 +193,7 @@ level without needing all 9 services up.
 | AFTER commit 3 | 2026-07-09 | `dev/init-scripts/init-databases.sql` replay | All 9 service databases created and connectable (see below) |
 | AFTER commit 4 | 2026-07-09 | `PaymentApplicationService.selectRail()` unit tests | 13/13 pass — boundary values and explicit override all correct (see below) |
 | AFTER commit 5 | 2026-07-09 | Full repo-wide port reference audit + docker-compose replay | Zero remaining `:8080`/`:8081` conflicts; schema-registry container verified reachable on new host port (see below) |
+| AFTER commit 6 | 2026-07-09 | OutboxPoller routing + topics.yaml replay | 16/16 KafkaTopic documents parse correctly; domain-label convention holds for all 4 new topics (see below) |
 
 ### BEFORE — actual findings from running the checklist, not just reading code
 
@@ -474,3 +478,44 @@ repository-wide re-search after, per the requested process:
    - `mvn compile` — full reactor, BUILD SUCCESS after the
      `OriginexProperties.java` and two `application.yml` edits.
    - All test containers removed afterward.
+
+### AFTER commit 6 — OutboxPoller routing + Kafka topics
+
+1. **Confirmed this was preventative, not a live bug**, before writing
+   anything: grepped `bre-service`, `notification-service`, and
+   `partner-integration-service` for any `OutboxPublisher` usage — zero
+   matches in all three. Flagged this to the user rather than inventing
+   topic names silently, since a missing route to a topic that doesn't
+   exist yet is a naming decision, not a derivable fact the way the
+   ledger/payment migration fixes were.
+2. **Verified naming-taxonomy consistency before adding anything**: read
+   the full `infra/kafka/topics.yaml` and confirmed a strict, exception-free
+   rule across all 12 existing entries — the `domain` label always exactly
+   matches the topic name's second path segment (e.g.
+   `originex.ledger.journal-entries.events` → `domain: ledger`). Also
+   confirmed the file already has precedent for pre-provisioning a topic
+   with no backing service (`originex.collections.cases.events` — no
+   `collections-service` Maven module exists) — directly informed the
+   decision to add reserved bre/partner/notification topics rather than
+   treat "no publisher yet" as a reason to skip provisioning.
+3. Added 3 routing cases to `OutboxPoller.resolveTopicFromEventType()`
+   (`originex.bre.*`, `originex.partner.*`, `originex.notification.*`),
+   with an inline comment explaining they're reserved. No publisher or
+   consumer code touched, per the requested scope.
+4. Added 4 `KafkaTopic` CRDs to `infra/kafka/topics.yaml`:
+   - `originex.customer.customers.events` (**required**, live gap —
+     customer-service actively publishes here today; no reserved/future
+     framing needed)
+   - `originex.bre.evaluations.events`, `originex.partner.integration-requests.events`,
+     `originex.notifications.requests.events` — each explicitly commented
+     `RESERVED / pre-provisioned` in the YAML itself, stating plainly that
+     no publisher exists yet, so this is discoverable directly in the
+     infra file, not just in this doc.
+5. **Verified YAML correctness** with a Python multi-document parse
+   (`yaml.safe_load_all`) rather than eyeballing indentation: confirmed
+   all **16** documents (12 original + 4 new) parse successfully, and
+   printed each document's `name`/`domain` label/`partitions` to confirm
+   the domain-label-matches-topic-name rule holds for every new entry:
+   `customer`→`customer`, `bre`→`bre`, `partner`→`partner`,
+   `notifications`→`notifications` (matching its existing sibling
+   commands topic exactly). `mvn compile` — full reactor, BUILD SUCCESS.
