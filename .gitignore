@@ -1,0 +1,60 @@
+# ═══════════════════════════════════════════════════════════════════
+# Originex .gitignore
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── Maven ───
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# ─── IDE ───
+.idea/
+*.iml
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+*.swp
+*.swo
+
+# ─── Java ───
+*.class
+*.jar
+*.war
+hs_err_pid*
+
+# ─── Protobuf generated ───
+proto/src/main/java/
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+*.tmp
+
+# ─── Terraform ───
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform.lock.hcl
+
+# ─── Docker ───
+docker-compose.override.yml
+
+# ─── Logs ───
+*.log
+logs/
+
+# ─── Environment ───
+.env
+.env.local
+*.pem
+*.key
+
+# ─── Test output ───
+**/surefire-reports/
+**/failsafe-reports/

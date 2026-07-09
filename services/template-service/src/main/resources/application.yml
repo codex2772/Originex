@@ -1,0 +1,98 @@
+spring:
+  application:
+    name: template-service
+  threads:
+    virtual:
+      enabled: true
+
+  # ─── Database ───
+  datasource:
+    url: jdbc:postgresql://localhost:5432/originex_template
+    username: originex
+    password: originex_local
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      connection-timeout: 5000
+      pool-name: template-service-pool
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        default_schema: public
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  # ─── Kafka ───
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: template-service-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        max.poll.records: 500
+        session.timeout.ms: 30000
+    producer:
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+
+  # ─── Redis ───
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3000ms
+
+# ─── Server ───
+server:
+  port: 8080
+  shutdown: graceful
+
+# ─── Actuator ───
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis,kafka
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ─── Originex Platform ───
+originex:
+  tenant:
+    header-name: X-Tenant-Id
+    enforce: true
+  kafka:
+    schema-registry-url: http://localhost:8081
+
+# ─── Logging ───
+logging:
+  level:
+    com.originex: DEBUG
+    org.springframework.kafka: INFO
+    org.hibernate.SQL: DEBUG
+  pattern:
+    console: "%d{ISO8601} [%thread] [%X{traceId:-}] [%X{tenantId:-}] %-5level %logger{36} - %msg%n"

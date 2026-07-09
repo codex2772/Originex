@@ -1,0 +1,133 @@
+spring:
+  application:
+    name: partner-integration-service
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/originex_partner
+    username: originex
+    password: originex_local
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 5
+      pool-name: partner-integration-pool
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8085
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,db
+
+originex:
+  tenant:
+    header-name: X-Tenant-Id
+    enforce: true
+
+  # ─────────────────────────────────────────────────────────
+  # LIVE = real vendor API calls (requires credentials in Vault)
+  # SANDBOX = deterministic simulated responses (default, safe for dev/test)
+  # ─────────────────────────────────────────────────────────
+  partner:
+    mode: SANDBOX
+    bureau:
+      default: CIBIL
+      cibil:
+        base-url: https://sandbox.cibil.com
+      experian:
+        base-url: https://sandbox.experian.in
+      equifax:
+        base-url: https://sandbox.equifax.co.in
+      crif:
+        base-url: https://sandbox.crifhighmark.com
+    digilocker:
+      base-url: https://sandbox.digilocker.gov.in
+      client-id: CHANGE_ME
+    nsdl:
+      base-url: https://sandbox.protean-tinpan.com
+    bank-verification:
+      provider: PENNY_DROP
+      base-url: https://sandbox.decentro.tech
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      cibilBureau:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+      experianBureau:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+      equifaxBureau:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+      crifBureau:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+      aadhaarEkyc:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+      panVerification:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+      bankVerification:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+  retry:
+    instances:
+      cibilBureau:
+        max-attempts: 3
+        wait-duration: 1s
+      experianBureau:
+        max-attempts: 3
+        wait-duration: 1s
+      equifaxBureau:
+        max-attempts: 3
+        wait-duration: 1s
+      crifBureau:
+        max-attempts: 3
+        wait-duration: 1s
+      aadhaarEkyc:
+        max-attempts: 2
+        wait-duration: 500ms
+      panVerification:
+        max-attempts: 2
+        wait-duration: 500ms
+      bankVerification:
+        max-attempts: 2
+        wait-duration: 500ms
+
+logging:
+  level:
+    com.originex: DEBUG
+  pattern:
+    console: "%d{ISO8601} [%thread] [%X{traceId:-}] [%X{tenantId:-}] %-5level %logger{36} - %msg%n"

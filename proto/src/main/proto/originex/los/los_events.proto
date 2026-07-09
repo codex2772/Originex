@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package originex.los;
+
+option java_package = "com.originex.proto.los";
+option java_outer_classname = "LosEventsProtos";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "originex/common/common.proto";
+
+// ═══════════════════════════════════════════════════════════════════
+// LOS Domain Events
+// ═══════════════════════════════════════════════════════════════════
+
+message ApplicationSubmitted {
+    string application_id = 1;
+    string customer_id = 2;
+    string product_code = 3;
+    originex.common.Money requested_amount = 4;
+    int32 requested_tenure_months = 5;
+    string channel = 6;
+    google.protobuf.Timestamp submitted_at = 7;
+}
+
+message CreditCheckCompleted {
+    string application_id = 1;
+    int32 credit_score = 2;
+    string bureau = 3;
+    string report_reference = 4;
+    google.protobuf.Timestamp checked_at = 5;
+}
+
+message ApplicationApproved {
+    string application_id = 1;
+    string customer_id = 2;
+    string product_code = 3;
+    originex.common.Money sanctioned_amount = 4;
+    string decision_notes = 5;
+    google.protobuf.Timestamp approved_at = 6;
+}
+
+message ApplicationRejected {
+    string application_id = 1;
+    string customer_id = 2;
+    string rejection_reason = 3;
+    google.protobuf.Timestamp rejected_at = 4;
+}
+
+message OfferGenerated {
+    string application_id = 1;
+    string offer_id = 2;
+    originex.common.Money sanctioned_amount = 3;
+    string interest_rate = 4;
+    int32 tenure_months = 5;
+    originex.common.Money emi = 6;
+    originex.common.Money processing_fee = 7;
+    string apr = 8;
+    google.protobuf.Timestamp expires_at = 9;
+}
+
+message OfferAccepted {
+    string application_id = 1;
+    string offer_id = 2;
+    string customer_id = 3;
+    google.protobuf.Timestamp accepted_at = 4;
+}
+
+message DisbursementRequested {
+    string application_id = 1;
+    string customer_id = 2;
+    string product_code = 3;
+    originex.common.Money sanctioned_amount = 4;
+    string interest_rate = 5;
+    string rate_type = 6;
+    int32 tenure_months = 7;
+    originex.common.Money emi = 8;
+    originex.common.Money processing_fee = 9;
+    string applicant_name = 10;
+    google.protobuf.Timestamp requested_at = 11;
+}

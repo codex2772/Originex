@@ -1,0 +1,107 @@
+spring:
+  application:
+    name: notification-service
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/originex_notification
+    username: originex
+    password: originex_local
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 3
+      pool-name: notification-pool
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      properties:
+        max.poll.records: 100
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+
+server:
+  port: 8087
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,db
+
+originex:
+  tenant:
+    header-name: X-Tenant-Id
+    enforce: false          # Notification service processes events without HTTP tenant header
+  partner:
+    mode: SANDBOX           # LIVE for production
+  notification:
+    retry-interval-ms: 600000  # 10 minutes
+    email:
+      from: noreply@originex.in
+    sms:
+      sender-id: ORIGNX
+    default-language: en
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      smsChannel:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+      emailChannel:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+      whatsappChannel:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+      pushChannel:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+  retry:
+    instances:
+      smsChannel:
+        max-attempts: 2
+        wait-duration: 1s
+      emailChannel:
+        max-attempts: 2
+        wait-duration: 1s
+      whatsappChannel:
+        max-attempts: 2
+        wait-duration: 1s
+
+logging:
+  level:
+    com.originex: DEBUG
+  pattern:
+    console: "%d{ISO8601} [%thread] [%X{traceId:-}] [%X{tenantId:-}] %-5level %logger{36} - %msg%n"

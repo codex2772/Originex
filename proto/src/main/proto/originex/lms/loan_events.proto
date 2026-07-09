@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package originex.lms;
+
+option java_package = "com.originex.proto.lms";
+option java_outer_classname = "LoanEventsProtos";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "originex/common/common.proto";
+
+// ═══════════════════════════════════════════════════════════════════
+// LMS Domain Events
+// ═══════════════════════════════════════════════════════════════════
+
+message LoanCreated {
+    string loan_id = 1;
+    string customer_id = 2;
+    string application_id = 3;
+    string product_code = 4;
+    originex.common.Money sanctioned_amount = 5;
+    string interest_rate = 6;           // BigDecimal as string
+    string rate_type = 7;               // FIXED, FLOATING
+    int32 tenure_months = 8;
+    string loan_account_number = 9;
+}
+
+message LoanDisbursed {
+    string loan_id = 1;
+    string disbursement_id = 2;
+    originex.common.Money amount = 3;
+    string beneficiary_account = 4;
+    string payment_reference = 5;
+    google.protobuf.Timestamp disbursed_at = 6;
+}
+
+message RepaymentReceived {
+    string loan_id = 1;
+    string payment_order_id = 2;
+    originex.common.Money amount = 3;
+    string payment_mode = 4;            // NACH, UPI, NEFT, RTGS
+    google.protobuf.Timestamp received_at = 5;
+}
+
+message RepaymentAllocated {
+    string loan_id = 1;
+    string payment_order_id = 2;
+    originex.common.Money charges_allocated = 3;
+    originex.common.Money penal_interest_allocated = 4;
+    originex.common.Money interest_allocated = 5;
+    originex.common.Money principal_allocated = 6;
+    originex.common.Money excess = 7;
+    repeated int32 installments_fully_paid = 8;
+    originex.common.Money outstanding_principal_after = 9;
+    originex.common.Money outstanding_interest_after = 10;
+}
+
+message InterestAccrued {
+    string loan_id = 1;
+    originex.common.Money accrued_amount = 2;
+    originex.common.LocalDate accrual_date = 3;
+    string outstanding_principal = 4;   // BigDecimal at time of accrual
+    string annual_rate = 5;             // Rate used
+    string day_count_convention = 6;    // ACT_365, THIRTY_360
+}
+
+message ScheduleGenerated {
+    string loan_id = 1;
+    int32 schedule_version = 2;
+    int32 total_installments = 3;
+    originex.common.Money emi_amount = 4;
+    originex.common.LocalDate first_due_date = 5;
+    originex.common.LocalDate last_due_date = 6;
+}
+
+message LoanForeclosed {
+    string loan_id = 1;
+    originex.common.Money foreclosure_amount = 2;
+    originex.common.Money principal_settled = 3;
+    originex.common.Money interest_settled = 4;
+    originex.common.Money charges_settled = 5;
+    google.protobuf.Timestamp foreclosed_at = 6;
+}
+
+message NPAClassified {
+    string loan_id = 1;
+    int32 dpd = 2;
+    string asset_classification = 3;    // SUB_STANDARD, DOUBTFUL, LOSS
+    originex.common.Money unrealized_interest = 4;
+    originex.common.LocalDate npa_date = 5;
+}
+
+message LoanMatured {
+    string loan_id = 1;
+    google.protobuf.Timestamp matured_at = 2;
+    originex.common.Money total_interest_paid = 3;
+    originex.common.Money total_principal_paid = 4;
+}

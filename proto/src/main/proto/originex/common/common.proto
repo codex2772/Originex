@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package originex.common;
+
+option java_package = "com.originex.proto.common";
+option java_outer_classname = "CommonProtos";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+/**
+ * Monetary value — always stored as string to preserve BigDecimal precision.
+ * Never use float/double for financial amounts.
+ */
+message Money {
+    string value = 1;       // BigDecimal as string (e.g., "500000.0000")
+    string currency = 2;    // ISO 4217 code (e.g., "INR")
+}
+
+/**
+ * Cursor-based pagination request.
+ */
+message PaginationRequest {
+    int32 page_size = 1;        // Max items per page (default 25, max 100)
+    string cursor_after = 2;    // Cursor for next page (opaque, base64)
+    string cursor_before = 3;   // Cursor for previous page
+}
+
+/**
+ * Pagination response metadata.
+ */
+message PaginationResponse {
+    int32 page_size = 1;
+    bool has_next = 2;
+    bool has_previous = 3;
+    string next_cursor = 4;
+    string previous_cursor = 5;
+    int64 total_count = 6;      // Optional: only when countable efficiently
+}
+
+/**
+ * Standard error detail (maps to RFC 7807 Problem Details).
+ */
+message ErrorDetail {
+    string field = 1;
+    string code = 2;
+    string message = 3;
+    map<string, string> meta = 4;
+}
+
+/**
+ * Address value object.
+ */
+message Address {
+    string line1 = 1;
+    string line2 = 2;
+    string city = 3;
+    string state = 4;
+    string postal_code = 5;
+    string country = 6;     // ISO 3166-1 alpha-2
+}
+
+/**
+ * Tenant identifier — present in every cross-service message.
+ */
+message TenantId {
+    string value = 1;       // UUID string
+}
+
+/**
+ * Date (without time) — used for business dates (due date, posting date).
+ */
+message LocalDate {
+    int32 year = 1;
+    int32 month = 2;
+    int32 day = 3;
+}

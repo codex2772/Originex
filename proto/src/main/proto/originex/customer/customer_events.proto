@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package originex.customer;
+
+option java_package = "com.originex.proto.customer";
+option java_outer_classname = "CustomerEventsProtos";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "originex/common/common.proto";
+
+// ═══════════════════════════════════════════════════════════════════
+// Customer Domain Events
+// ═══════════════════════════════════════════════════════════════════
+
+message CustomerRegistered {
+    string customer_id = 1;
+    string first_name = 2;
+    string last_name = 3;
+    string phone = 4;
+    string email = 5;
+    google.protobuf.Timestamp registered_at = 6;
+}
+
+message CustomerProfileUpdated {
+    string customer_id = 1;
+    string first_name = 2;
+    string last_name = 3;
+    string email = 4;
+    google.protobuf.Timestamp updated_at = 5;
+}
+
+message KYCSubmitted {
+    string customer_id = 1;
+    string kyc_record_id = 2;
+    string kyc_type = 3;
+    google.protobuf.Timestamp submitted_at = 4;
+}
+
+message KYCCompleted {
+    string customer_id = 1;
+    string kyc_record_id = 2;
+    string kyc_type = 3;
+    google.protobuf.Timestamp verified_at = 4;
+    google.protobuf.Timestamp expires_at = 5;
+}
+
+message KYCRejected {
+    string customer_id = 1;
+    string kyc_record_id = 2;
+    string rejection_reason = 3;
+}
+
+message BankAccountAdded {
+    string customer_id = 1;
+    string bank_account_id = 2;
+    string ifsc_code = 3;
+    string bank_name = 4;
+    string account_type = 5;
+    bool is_primary = 6;
+}
+
+message BankAccountVerified {
+    string customer_id = 1;
+    string bank_account_id = 2;
+    google.protobuf.Timestamp verified_at = 3;
+}

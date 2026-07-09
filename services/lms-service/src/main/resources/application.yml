@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: lms-service
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/originex_lms
+    username: originex
+    password: originex_local
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 10
+      pool-name: lms-service-pool
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: lms-service-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        max.poll.records: 100
+        session.timeout.ms: 30000
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+server:
+  port: 8083
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis,kafka
+
+originex:
+  tenant:
+    header-name: X-Tenant-Id
+    enforce: true
+  kafka:
+    schema-registry-url: http://localhost:8081
+    topics:
+      disbursement-requested: originex.los.applications.events
+      loan-events: originex.lms.loans.events
+
+logging:
+  level:
+    com.originex: DEBUG
+  pattern:
+    console: "%d{ISO8601} [%thread] [%X{traceId:-}] [%X{tenantId:-}] %-5level %logger{36} - %msg%n"

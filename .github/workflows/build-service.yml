@@ -1,0 +1,109 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Reusable CI workflow for Originex services
+# Called by per-service workflows: uses: ./.github/workflows/build-service.yml
+# ═══════════════════════════════════════════════════════════════════════════
+name: Build Service
+
+on:
+  workflow_call:
+    inputs:
+      service-path:
+        description: "Path to the service module (e.g., services/template-service)"
+        required: true
+        type: string
+      java-version:
+        description: "Java version"
+        required: false
+        type: string
+        default: "21"
+      run-integration-tests:
+        description: "Whether to run integration tests"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: originex
+          POSTGRES_PASSWORD: originex_test
+          POSTGRES_DB: originex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U originex"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: temurin
+          cache: maven
+
+      - name: Build and Unit Test
+        run: |
+          mvn -B -pl ${{ inputs.service-path }} -am \
+            clean verify \
+            -DskipITs=true \
+            -Dspring.profiles.active=test
+
+      - name: Integration Tests
+        if: inputs.run-integration-tests
+        run: |
+          mvn -B -pl ${{ inputs.service-path }} \
+            verify -Pintegration-test \
+            -Dspring.profiles.active=integration-test
+
+      - name: Static Analysis (SpotBugs)
+        run: |
+          mvn -B -pl ${{ inputs.service-path }} \
+            spotbugs:check || true
+
+      - name: OWASP Dependency Check
+        run: |
+          mvn -B -pl ${{ inputs.service-path }} \
+            org.owasp:dependency-check-maven:check \
+            -DfailBuildOnCVSS=9 || true
+
+      - name: Build Container Image (JIB — local only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mvn -B -pl ${{ inputs.service-path }} \
+            jib:dockerBuild \
+            -Djib.to.image=originex/${{ inputs.service-path }}:${{ github.sha }}
+
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.service-path }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+      - name: Secret Scanning (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

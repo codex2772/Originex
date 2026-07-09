@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package originex.ledger;
+
+option java_package = "com.originex.proto.ledger";
+option java_outer_classname = "LedgerEventsProtos";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "originex/common/common.proto";
+
+// ═══════════════════════════════════════════════════════════════════
+// Ledger Domain Events
+// ═══════════════════════════════════════════════════════════════════
+
+message AccountOpened {
+    string account_id = 1;
+    string account_number = 2;
+    string name = 3;
+    string account_type = 4;
+    string normal_balance = 5;
+    string gl_code = 6;
+    string currency = 7;
+    string loan_id = 8;
+    string customer_id = 9;
+    google.protobuf.Timestamp opened_at = 10;
+}
+
+message JournalEntryPosted {
+    string entry_id = 1;
+    string entry_type = 2;
+    string posting_date = 3;
+    string value_date = 4;
+    string description = 5;
+    string source_system = 6;
+    string source_id = 7;
+    repeated PostingLeg postings = 8;
+    google.protobuf.Timestamp posted_at = 9;
+}
+
+message PostingLeg {
+    string posting_id = 1;
+    string account_id = 2;
+    string side = 3;            // DEBIT or CREDIT
+    originex.common.Money amount = 4;
+    string narration = 5;
+}
+
+message JournalEntryReversed {
+    string original_entry_id = 1;
+    string reversal_entry_id = 2;
+    string reason = 3;
+    google.protobuf.Timestamp reversed_at = 4;
+}
+
+message BalanceSnapshotCreated {
+    string account_id = 1;
+    string account_number = 2;
+    originex.common.Money balance = 3;
+    int64 last_event_sequence = 4;
+    google.protobuf.Timestamp snapshot_at = 5;
+}

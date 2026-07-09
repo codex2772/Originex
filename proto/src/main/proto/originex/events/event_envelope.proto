@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package originex.events;
+
+option java_package = "com.originex.proto.events";
+option java_outer_classname = "EventProtos";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+/**
+ * Standard event envelope — wraps every domain event published to Kafka.
+ * Provides consistent metadata for correlation, tracing, and multi-tenancy.
+ */
+message EventEnvelope {
+    // Identity
+    string event_id = 1;                // UUIDv7 — globally unique
+    string event_type = 2;              // Fully qualified: "originex.lms.LoanDisbursed"
+    int32 event_version = 3;            // Schema version (1, 2, 3...)
+
+    // Aggregate info
+    string aggregate_type = 4;          // e.g., "Loan", "Account", "LoanApplication"
+    string aggregate_id = 5;            // Entity ID (partition key)
+
+    // Multi-tenancy
+    string tenant_id = 6;
+
+    // Timestamps
+    google.protobuf.Timestamp occurred_at = 7;  // When the business event happened
+    google.protobuf.Timestamp published_at = 8; // When published to Kafka
+
+    // Correlation & Causation
+    string correlation_id = 9;          // Original request chain correlation
+    string causation_id = 10;           // Direct cause event ID
+    string trace_id = 11;              // OpenTelemetry trace ID
+    string span_id = 12;              // OpenTelemetry span ID
+
+    // Actor
+    string actor_id = 13;              // Who triggered this (user ID, system ID)
+    string actor_type = 14;            // USER, SYSTEM, SCHEDULER, EXTERNAL
+
+    // Extensible metadata
+    map<string, string> metadata = 15;
+
+    // Payload — serialized domain event (Protobuf bytes)
+    bytes payload = 16;
+}
+
+/**
+ * Dead Letter metadata — attached when event moves to DLQ.
+ */
+message DeadLetterMetadata {
+    string original_topic = 1;
+    int32 original_partition = 2;
+    int64 original_offset = 3;
+    int32 retry_count = 4;
+    string failure_reason = 5;
+    string failure_exception = 6;
+    google.protobuf.Timestamp failed_at = 7;
+    google.protobuf.Timestamp next_retry_at = 8;
+}
+
+/**
+ * Command envelope — for async command messages.
+ */
+message CommandEnvelope {
+    string command_id = 1;              // UUIDv7
+    string command_type = 2;            // Fully qualified command name
+    string tenant_id = 3;
+    string correlation_id = 4;
+    string actor_id = 5;
+    string actor_type = 6;
+    string idempotency_key = 7;         // Client-provided dedup key
+    google.protobuf.Timestamp issued_at = 8;
+    map<string, string> metadata = 9;
+    bytes payload = 10;
+}

@@ -1,0 +1,111 @@
+# Default values for originex-service chart.
+# Override per-service via values-<service>.yaml
+
+replicaCount: 2
+
+image:
+  repository: ""    # Set per service (e.g., <account>.dkr.ecr.ap-south-1.amazonaws.com/originex/lms-service)
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}   # e.g., eks.amazonaws.com/role-arn for IRSA
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  grpcPort: 9090
+
+ingress:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 1024Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  failureThreshold: 2
+
+startupProbe:
+  httpGet:
+    path: /actuator/health/startup
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 30
+
+env: []
+  # - name: SPRING_PROFILES_ACTIVE
+  #   value: "production"
+  # - name: SPRING_DATASOURCE_URL
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: db-credentials
+  #       key: url
+
+envFrom: []
+  # - secretRef:
+  #     name: service-secrets
+  # - configMapRef:
+  #     name: service-config
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - "{{ .Release.Name }}"
+          topologyKey: topology.kubernetes.io/zone
+
+# Istio sidecar injection
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+
+# Service monitor for Prometheus scraping
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  path: /actuator/prometheus
+
+# Virtual threads (Java 21)
+javaOpts: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Dspring.threads.virtual.enabled=true"

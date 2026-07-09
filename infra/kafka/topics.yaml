@@ -1,0 +1,216 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Kafka Topic Definitions (Strimzi KafkaTopic CRDs)
+# Applied to Kubernetes cluster where Strimzi Kafka operator is installed.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ─── LOS Topics ───
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.los.applications.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: los
+spec:
+  partitions: 32
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.los.applications.commands
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: los
+spec:
+  partitions: 32
+  replicas: 3
+  config:
+    retention.ms: "604800000"       # 7 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# ─── LMS Topics ───
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.lms.loans.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: lms
+spec:
+  partitions: 64
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.lms.loans.commands
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: lms
+spec:
+  partitions: 64
+  replicas: 3
+  config:
+    retention.ms: "604800000"       # 7 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# ─── Ledger Topics ───
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.ledger.journal-entries.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: ledger
+spec:
+  partitions: 128
+  replicas: 3
+  config:
+    retention.ms: "7776000000"      # 90 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# ─── Payment Topics ───
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.payments.orders.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: payments
+spec:
+  partitions: 32
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.payments.orders.commands
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: payments
+spec:
+  partitions: 32
+  replicas: 3
+  config:
+    retention.ms: "604800000"       # 7 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# ─── Collections Topics ───
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.collections.cases.events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: collections
+spec:
+  partitions: 16
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# ─── Notification Topics ───
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.notifications.requests.commands
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: notifications
+spec:
+  partitions: 16
+  replicas: 3
+  config:
+    retention.ms: "259200000"       # 3 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"
+---
+# ─── Platform / Audit Topics ───
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.platform.audit-events
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: platform
+spec:
+  partitions: 32
+  replicas: 3
+  config:
+    retention.ms: "7776000000"      # 90 days
+    cleanup.policy: delete
+    compression.type: zstd
+    min.insync.replicas: "2"
+---
+# ─── DLQ Topics ───
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.lms.loans.events.dlq
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: lms
+    type: dlq
+spec:
+  partitions: 8
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.payments.orders.events.dlq
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: payments
+    type: dlq
+spec:
+  partitions: 8
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
