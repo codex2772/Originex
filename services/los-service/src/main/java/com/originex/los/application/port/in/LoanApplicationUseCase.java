@@ -31,9 +31,16 @@ public interface LoanApplicationUseCase {
     LoanApplication initiateCreditCheck(UUID tenantId, UUID applicationId, String consentArtifactId);
 
     /**
-     * Internal: called after eligibility + offer generation.
+     * Approve an application and generate its offer using the supplied
+     * (manually decided) offer terms. Also reused by the auto-decision flow.
      */
     LoanApplication approveAndGenerateOffer(ApproveCommand command);
+
+    /**
+     * Reject an application with a reason. Orchestration only — the state
+     * transition and decision-notes rule live in {@code LoanApplication.reject}.
+     */
+    LoanApplication rejectApplication(RejectCommand command);
 
     // ─── Commands ───
 
@@ -78,5 +85,11 @@ public interface LoanApplicationUseCase {
             String processingFee,
             String apr,
             String notes
+    ) {}
+
+    record RejectCommand(
+            UUID tenantId,
+            UUID applicationId,
+            String reason
     ) {}
 }

@@ -88,6 +88,35 @@ public class LoanApplicationController {
         return ResponseEntity.ok(ApplicationResponse.from(app));
     }
 
+    @PostMapping("/{applicationId}/approve")
+    public ResponseEntity<ApplicationResponse> approve(
+            @PathVariable UUID applicationId,
+            @Valid @RequestBody ApproveRequest request) {
+
+        UUID tenantId = UUID.fromString(TenantContextHolder.requireTenantId());
+
+        ApproveCommand command = new ApproveCommand(
+                tenantId, applicationId,
+                request.sanctionedAmount(), request.interestRate(), request.tenureMonths(),
+                request.emi(), request.processingFee(), request.apr(), request.notes()
+        );
+
+        LoanApplication app = useCase.approveAndGenerateOffer(command);
+        return ResponseEntity.ok(ApplicationResponse.from(app));
+    }
+
+    @PostMapping("/{applicationId}/reject")
+    public ResponseEntity<ApplicationResponse> reject(
+            @PathVariable UUID applicationId,
+            @Valid @RequestBody RejectRequest request) {
+
+        UUID tenantId = UUID.fromString(TenantContextHolder.requireTenantId());
+
+        LoanApplication app = useCase.rejectApplication(
+                new RejectCommand(tenantId, applicationId, request.reason()));
+        return ResponseEntity.ok(ApplicationResponse.from(app));
+    }
+
     @PostMapping("/{applicationId}/offer/accept")
     public ResponseEntity<ApplicationResponse> acceptOffer(@PathVariable UUID applicationId) {
         UUID tenantId = UUID.fromString(TenantContextHolder.requireTenantId());
@@ -126,6 +155,20 @@ public class LoanApplicationController {
 
     record CreditCheckRequest(
             @NotBlank String consentArtifactId
+    ) {}
+
+    record ApproveRequest(
+            @NotBlank String sanctionedAmount,
+            @NotBlank String interestRate,
+            @NotNull @Positive Integer tenureMonths,
+            @NotBlank String emi,
+            @NotBlank String processingFee,
+            @NotBlank String apr,
+            String notes
+    ) {}
+
+    record RejectRequest(
+            @NotBlank String reason
     ) {}
 
     // ─── Response DTO ───

@@ -60,13 +60,15 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 ## los-service — port 8082
 
 **Purpose:** Loan application intake, credit-check orchestration (bureau + BRE), auto-decisioning, offer generation.
-**Implementation status:** Rich orchestration implemented; the manual-underwriter path is a dead-end.
+**Implementation status:** Rich orchestration implemented; the manual-review (approve/reject) path is now wired.
 
 **APIs implemented** (`LoanApplicationController`, `/v1/loan-applications`):
 - `POST /` — submit (returns 202)
 - `GET /{applicationId}`
 - `POST /{applicationId}/documents`
 - `POST /{applicationId}/credit-check` — bureau pull + BRE eval + auto-decision
+- `POST /{applicationId}/approve` — manual approve with supplied offer terms
+- `POST /{applicationId}/reject` — manual reject with reason
 - `POST /{applicationId}/offer/accept`
 - `DELETE /{applicationId}` — withdraw
 
@@ -75,13 +77,13 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 **Database:** `loan_applications`, `loan_offers`, `application_documents`, `outbox_events`. RLS 3.
 **Flyway:** `V1` only.
 **Domain aggregates:** `LoanApplication` (root), `LoanOffer` (VO), `ApplicationDocument`.
-**State machine:** `ApplicationStatus` — 11 states with `canTransitionTo` guard: DRAFT, SUBMITTED, IN_PROGRESS, REFERRED, APPROVED, REJECTED, OFFER_PENDING, OFFER_ACCEPTED, OFFER_EXPIRED, DISBURSEMENT_REQUESTED, WITHDRAWN. `DRAFT` is in the enum but `submit()` starts at SUBMITTED, so DRAFT is unreachable in practice. `OFFER_EXPIRED` is reached **lazily** — `acceptOffer()` → `LoanApplication` checks `currentOffer.isExpired()` and transitions; there is no scheduler.
+**State machine:** `ApplicationStatus` — 11 states with `canTransitionTo` guard: DRAFT, SUBMITTED, IN_PROGRESS, REFERRED, APPROVED, REJECTED, OFFER_PENDING, OFFER_ACCEPTED, OFFER_EXPIRED, DISBURSEMENT_REQUESTED, WITHDRAWN. `DRAFT` is in the enum but `submit()` starts at SUBMITTED, so DRAFT is unreachable in practice. `REFERRED` is reached when the credit-check gets `REFER_TO_UNDERWRITER` (now wired via `LoanApplication.refer`) and is exited via the approve/reject endpoints. `OFFER_EXPIRED` is reached **lazily** — `acceptOffer()` → `LoanApplication` checks `currentOffer.isExpired()` and transitions; there is no scheduler.
 **External integrations:** customer-service (GET eligibility), partner (bureau pull), bre (evaluate) — 3 REST adapters w/ CB+Retry. If BRE is down, fallback returns REFER_TO_UNDERWRITER (fail-safe).
-**Missing functionality:** REST path to resolve a `REFERRED` application (approve/reject) — the core FSM has no way out of REFERRED via API; pagination; auth.
-**Dead code:** `LoanApplicationUseCase.recordCreditResult(...)` and `approveAndGenerateOffer(...)` — both implemented, invoked by no controller.
+**Missing functionality:** referral queue/listing endpoint; pagination; auth. (The REFERRED dead-end — no API to resolve a referred application — is resolved: approve/reject endpoints now exist.)
+**Dead code:** `LoanApplicationUseCase.recordCreditResult(...)` — implemented, invoked by no controller/consumer. (`approveAndGenerateOffer` is now wired via `POST /approve`.)
 **TODOs:** none material in this service.
-**Known risks:** a referred application is stuck with no operator action available today.
-**Test coverage:** `LoanApplicationTest`, `EndToEndDomainFlowTest` (both pure-domain).
+**Known risks:** referred applications have no listing/queue endpoint yet (must be fetched by id); decision endpoints are unauthenticated (no auth platform-wide).
+**Test coverage:** `LoanApplicationTest` (incl. referral→approve/reject cases), `EndToEndDomainFlowTest` (both pure-domain).
 **Production readiness: 4/10.**
 
 ---
@@ -260,7 +262,7 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 ### High (blocks core lending journey completion or correctness)
 | Feature | Where | Why high |
 |---|---|---|
-| Underwriter decision endpoint for `REFERRED` | `los-service` (`approveAndGenerateOffer`/`recordCreditResult` unwired) | Any application referred to manual review is a permanent dead-end via API. |
+| ~~Manual decision endpoints for `REFERRED`~~ **RESOLVED** | `los-service` — `POST /approve` + `POST /reject` wired; credit-check now transitions REFER → `REFERRED` | Was: referred applications were a permanent dead-end via API. |
 | Penal-interest model | `lms-service` (`Loan` waterfall) | Documented but non-existent; repayment allocation silently omits penal interest. |
 | Loan create/disburse REST surface | `lms-service` (`disburseLoan` dead, no `POST /v1/loans`) | Ops has no manual lever; disbursement retry after `DISBURSEMENT_FAILED` unreachable. |
 | Customer profile lookup for notifications | `notification-service` consumer | Real events lack phone/email; borrower comms will be blank. |
@@ -298,7 +300,7 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 |---|---|---|
 | bre-service | 5/10 | Cleanest & best-tested; needs rule API + auth |
 | customer-service | 4/10 | Solid domain; PAN stub, 1 dead endpoint, no auth |
-| los-service | 4/10 | Rich orchestration; REFERRED dead-end, dead code, no auth |
+| los-service | 4/10 | Rich orchestration; referral approve/reject now wired; `recordCreditResult` still dead, no auth |
 | payment-service | 4/10 | Lifecycle + rail selection tested; sandbox rails, no auth |
 | notification-service | 4/10 | 4 channels + 35 triggers; recipient data missing, sandbox |
 | lms-service | 3.5/10 | Core Kafka flow works; no penal interest, NPA never runs, dead code |
@@ -306,7 +308,7 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 | partner-integration-service | 3/10 | Well-structured but 100% sandbox, zero tests |
 | template-service | N/A | Scaffold |
 
-**Platform overall: ~4/10 — "internally coherent, not production-deployable."** The domain layer is genuinely well-built and the event choreography is sound and now bootstrappable (post-Phase 0). But five Critical gaps (no auth, inert RLS, PII in clear, all-sandbox integrations, NPA never runs) mean the platform cannot serve a real regulated lending workload today. The most valuable next step remains a genuine end-to-end boot of all services together (blocked in this local environment), followed by closing the `REFERRED` dead-end so the core loan journey is completable for every application, not just the auto-decisioned happy path.
+**Platform overall: ~4/10 — "internally coherent, not production-deployable."** The domain layer is genuinely well-built and the event choreography is sound and now bootstrappable (post-Phase 0). But five Critical gaps (no auth, inert RLS, PII in clear, all-sandbox integrations, NPA never runs) mean the platform cannot serve a real regulated lending workload today. The most valuable next step remains a genuine end-to-end boot of all services together (blocked in this local environment). The `REFERRED` dead-end has since been closed (manual approve/reject endpoints), so the core loan journey is now completable for referred applications, not just the auto-decisioned happy path.
 
 ---
 

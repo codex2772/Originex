@@ -17,7 +17,7 @@
 | 3 | Loan Application | 🟡 |
 | 4 | Credit Bureau | 🟡 |
 | 5 | BRE | ✅ |
-| 6 | Underwriting (manual) | 🔴 |
+| 6 | Underwriting (manual) | 🟡 |
 | 7 | Offer Management | 🟡 |
 | 8 | Disbursement | 🟡 |
 | 9 | EMI Schedule | 🟡 |
@@ -38,7 +38,7 @@
 | 24 | Multi-tenancy | 🟡 |
 | 25 | Reporting | 🔴 |
 
-**Tally:** ✅ 1 · 🟡 14 · 🔴 10. No capability is fully production-ready because of platform-wide gaps (no auth, RLS inert at runtime, all external integrations sandbox) — see individual "Missing components".
+**Tally:** ✅ 1 · 🟡 15 · 🔴 9. No capability is fully production-ready because of platform-wide gaps (no auth, RLS inert at runtime, all external integrations sandbox) — see individual "Missing components".
 
 ---
 
@@ -92,15 +92,15 @@
 - **Kafka events:** none.
 - **Recommended next work:** Add rule CRUD API for runtime configurability.
 
-## 6. Underwriting (manual) — 🔴
-- **Business objective:** Let a human underwriter approve/reject applications the engine refers.
-- **Current implementation:** None reachable. `approveAndGenerateOffer(...)` and `recordCreditResult(...)` exist in the LOS use-case but are wired to **no controller**; the FSM has a `REFERRED` state (reached when BRE returns REFER or is unavailable) with no API path out.
-- **Missing components:** Underwriter decision endpoint; referral queue/listing; decision audit; role-gating.
-- **Responsible services:** los-service (would host it).
-- **Database tables:** `loan_applications` (reused).
-- **REST APIs:** none (needed: e.g. `POST /v1/loan-applications/{id}/decision`).
-- **Kafka events:** would reuse `ApplicationApproved`/`ApplicationRejected`.
-- **Recommended next work:** Wire the existing `approveAndGenerateOffer`/reject methods to a REST endpoint — highest-value single fix to complete the core journey.
+## 6. Underwriting (manual) — 🟡
+- **Business objective:** Approve/reject applications the engine refers to manual review.
+- **Current implementation:** Wired. On `REFER_TO_UNDERWRITER` the credit-check now transitions the application to `REFERRED` (via `LoanApplication.refer`); two explicit endpoints action a referred (or in-progress) application: `POST /v1/loan-applications/{id}/approve` (reuses `approveAndGenerateOffer` with manually-supplied offer terms → offer generated) and `POST /v1/loan-applications/{id}/reject` (new `rejectApplication` orchestration → `LoanApplication.reject`). Validity is enforced by the aggregate's `transitionTo` guard, not the controller.
+- **Missing components:** Referral queue/listing endpoint; assignment/work-allocation; decision audit trail; role-gating (no auth platform-wide). These keep it 🟡, not ✅.
+- **Responsible services:** los-service.
+- **Database tables:** `loan_applications`, `loan_offers` (reused; no migration).
+- **REST APIs:** `POST /v1/loan-applications/{id}/approve`, `POST /v1/loan-applications/{id}/reject`.
+- **Kafka events:** reuses `originex.los.ApplicationApproved` / `ApplicationRejected` (no new event types).
+- **Recommended next work:** Add a referral queue/listing endpoint and, once auth exists, role-gate the decision endpoints.
 
 ## 7. Offer Management — 🟡
 - **Business objective:** Generate, present, expire, and accept loan offers (incl. KFS).
@@ -295,8 +295,8 @@
 ---
 
 ## Cross-cutting themes (verified)
-1. **A recurring pattern: domain logic exists but is never invoked.** `levyCharge`, `accrueInterest`, `foreclose`, `updateDpd`, `approveAndGenerateOffer`, `disburseLoan` are all implemented on aggregates/use-cases but have **no runtime caller** — so Charges, interest accrual, Foreclosure execution, NPA, manual Underwriting, and manual Disbursement are all "coded but unreachable." Wiring these is disproportionately high-value versus writing new logic.
-2. **The core auto-decisioned journey works** (Customer → KYC → Application → Bureau → BRE → Offer → Disbursement → Ledger → Repayment → Notification), all in sandbox — but every *exception* path (referral, delinquency, restructure, settlement, write-off) is 🔴.
+1. **A recurring pattern: domain logic exists but is never invoked.** `levyCharge`, `accrueInterest`, `foreclose`, `updateDpd`, `disburseLoan`, and LOS `recordCreditResult` are implemented on aggregates/use-cases but have **no runtime caller** — so Charges, interest accrual, Foreclosure execution, NPA, and manual Disbursement remain "coded but unreachable." (Manual Underwriting was in this list — `refer`/`approveAndGenerateOffer` — and has now been wired.) Wiring these is disproportionately high-value versus writing new logic.
+2. **The core auto-decisioned journey works** (Customer → KYC → Application → Bureau → BRE → Offer → Disbursement → Ledger → Repayment → Notification), all in sandbox. The referral exception path is now actionable (manual approve/reject); the remaining exception paths (delinquency, restructure, settlement, write-off) are still 🔴.
 3. **No capability is production-complete** because of the three platform blockers: no authentication, RLS inert at runtime, and 100%-sandbox external integrations.
 
 *Verified from source on 9 July 2026. "Wired / not wired" determinations were made by cross-referencing each domain and use-case method against its actual callers in the application and adapter layers.*

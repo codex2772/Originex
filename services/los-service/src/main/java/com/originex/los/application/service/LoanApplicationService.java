@@ -287,6 +287,27 @@ public class LoanApplicationService implements LoanApplicationUseCase {
     }
 
     @Override
+    public LoanApplication rejectApplication(RejectCommand command) {
+        LoanApplication app = applicationRepository.findById(command.tenantId(), command.applicationId())
+                .orElseThrow(() -> new ApplicationNotFoundException(command.applicationId()));
+
+        // Domain owns the rule (transition guard + decision notes); this is
+        // orchestration only. Mirrors the auto-reject publish in initiateCreditCheck.
+        app.reject(command.reason());
+
+        LoanApplication saved = applicationRepository.save(app);
+        log.info("Application rejected: appId={}", command.applicationId());
+
+        outboxPublisher.publish("LoanApplication", command.applicationId(),
+                "originex.los.ApplicationRejected", command.tenantId(),
+                String.format("{\"application_id\":\"%s\",\"reason\":\"%s\"}",
+                        command.applicationId(), command.reason())
+                        .getBytes(StandardCharsets.UTF_8));
+
+        return saved;
+    }
+
+    @Override
     public LoanApplication acceptOffer(UUID tenantId, UUID applicationId) {
         LoanApplication app = applicationRepository.findById(tenantId, applicationId)
                 .orElseThrow(() -> new ApplicationNotFoundException(applicationId));
