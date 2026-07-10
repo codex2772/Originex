@@ -135,8 +135,8 @@
 
 ## 10. Repayment — 🟡
 - **Business objective:** Accept repayments and allocate them correctly against the loan.
-- **Current implementation:** `allocateRepayment` waterfall wired two ways — manual (`POST /v1/loans/{id}/repayments`) and event-driven (`PaymentReceived` → `allocateRepaymentFromPayment`); reduces outstanding; publishes `RepaymentAllocated`; ledger auto-posts.
-- **Missing components:** Actual waterfall is **Charges → Interest → Principal** (no penal step — see Penalties); installment-level allocation/aging not driven; no arrears tracking.
+- **Current implementation:** `allocateRepayment` waterfall wired two ways — manual (`POST /v1/loans/{id}/repayments`) and event-driven (`PaymentReceived` → `allocateRepaymentFromPayment`); reduces outstanding; publishes `RepaymentAllocated`; ledger auto-posts. Repayment now also **settles the amortization schedule** oldest-installment-first (interest-due then principal-due per installment, marking `PAID`/`PARTIALLY_PAID`) and advances `next_due_date`, which the DPD job reads.
+- **Missing components:** Actual waterfall is **Charges → Interest → Principal** (no penal step — see Penalties); no arrears tracking; installment interest settlement uses scheduled interest, which can diverge from Actual/365 accrued interest (the documented rate/accrual reconciliation debt).
 - **Responsible services:** lms-service, payment-service, ledger-service.
 - **Database tables:** `loans`, `installments`, `payment_orders`; ledger `postings`.
 - **REST APIs:** `POST /v1/loans/{id}/repayments`.
@@ -225,13 +225,13 @@
 
 ## 19. NPA — 🟡
 - **Business objective:** Classify assets per RBI norms (90+ DPD → NPA, escalating to DOUBTFUL/LOSS).
-- **Current implementation:** `Loan.updateDpd()` correctly sets NPA at 90+ DPD, DOUBTFUL at 365+, LOSS at 730+, and is unit-tested (`LoanTest`).
-- **Missing components:** **Never runs at runtime** — `updateDpd()` is invoked by **no scheduler or consumer**; nothing computes DPD from due dates; the transition also bypasses the FSM guard (direct field assignment).
+- **Current implementation:** A daily `DpdAgingService` scheduler now computes DPD as calendar days since the oldest unpaid installment's due date (Asia/Kolkata) and calls `Loan.updateDpd()`, which sets NPA at 90+ DPD, DOUBTFUL at 365+, LOSS at 730+. Idempotent (absolute recompute), keyset-paginated, `@Version`-safe, disable-able via `originex.lms.dpd.enabled`; unit-tested (`LoanTest`) and covered end-to-end by `LoanLifecycleIntegrationTest`.
+- **Missing components:** v1 **persists classification only** — no provisioning ledger postings, no NPA interest-suspense reclassification, no `AssetClassificationChanged` event, and no automatic NPA→ACTIVE upgrade on cure (DPD resets to 0 but status stays NPA). The NPA transition still bypasses the FSM guard (direct field assignment).
 - **Responsible services:** lms-service.
-- **Database tables:** `loans` (`dpd`, `max_dpd`, `asset_classification`).
+- **Database tables:** `loans` (`dpd`, `max_dpd`, `asset_classification`, `next_due_date`).
 - **REST APIs:** none.
-- **Kafka events:** none (would ideally emit an NPA-classified event).
-- **Recommended next work:** Add a daily DPD/NPA aging job that computes DPD and calls `updateDpd`; emit a classification event for notifications/collections.
+- **Kafka events:** none in v1 (a classification event is a deferred enhancement).
+- **Recommended next work:** Provisioning postings + NPA interest-suspense; emit a classification event for notifications/collections; NPA→ACTIVE cure/upgrade rules.
 
 ## 20. Accounting — 🟡
 - **Business objective:** Immutable double-entry ledger as financial source of truth.

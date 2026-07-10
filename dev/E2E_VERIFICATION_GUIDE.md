@@ -298,7 +298,7 @@ SELECT account_number, balance FROM account_snapshots ORDER BY account_number;  
 | Repayment + allocation | **No** (via flow) | `allocateRepayment` requires `ACTIVE` | Fix disbursement trigger |
 | Loan closure (MATURED) | **No** | Needs full repayment | Fix disbursement + repayment path |
 | Foreclosure execution | **No** | `foreclose()` dead; only quote endpoint | Add `POST /foreclosure` + ledger closure posting |
-| NPA / DPD | **No** | `updateDpd()` has no scheduler | DPD/NPA aging job |
+| NPA / DPD | **Yes (classification)** | `DpdAgingService` daily job computes DPD from the oldest unpaid installment and classifies NPA/SUB_STANDARD/DOUBTFUL/LOSS | Provisioning postings, NPA interest-suspense, and NPA→ACTIVE auto-upgrade still deferred |
 | Accounting (ledger) | **Partial** | Single-tenant GL; only reachable via `lms.*` events | Per-tenant chart-of-accounts |
 | Notifications | **Partial** | Recipient phone/email from payload; channels sandbox | Customer-profile lookup; LIVE channels |
 | Audit / Reporting / Security / Multi-tenancy(RLS) | **No** | Not implemented / inert | Dedicated services; JWT/RBAC; RLS runtime enforcement |

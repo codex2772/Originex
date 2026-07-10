@@ -20,7 +20,7 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 | Event serialization | **JSON**, hand-built via `String.format(...).getBytes()`. Protobuf classes are generated but **referenced by zero service code** (verified). |
 | Outbox/Inbox | Transactional outbox used by customer/los/lms/ledger/payment (+template). `bre`, `partner`, `notification` do **not** publish via outbox (0 usages). No direct `KafkaTemplate` use outside the starter. |
 | Resilience4j | 21 `@CircuitBreaker` + 17 `@Retry` annotations across outbound adapters (bureau/KYC/bank/rails/channels/inter-service REST). |
-| Scheduled jobs | 3: notification retry (10 min), payment retry (5 min), **lms interest-accrual (daily, `InterestAccrualService`)**. No DPD-aging or NPA-classification scheduler. |
+| Scheduled jobs | 4: notification retry (10 min), payment retry (5 min), **lms interest-accrual (daily 00:30, `InterestAccrualService`)**, **lms DPD/NPA aging (daily 01:00, `DpdAgingService`)**. |
 | Tests | 14 test files, **all domain/unit or migration-file level**. **Zero** `@Testcontainers`, zero `*IntegrationTest`/`*IT`. No web-layer or consumer integration tests. |
 | External integrations | **100% sandbox.** Every bureau/KYC/bank/payment-rail/notification-channel adapter throws `UnsupportedOperationException` in LIVE mode. |
 | Local runtime (this environment) | Not bootable end-to-end here: native Postgres occupies host 5432, and `cp-kafka` KRaft fails to format on this Docker host. Both are machine-specific, documented in `dev/PHASE0_VERIFICATION.md`; not repo defects. **No full multi-service boot has been observed.** |
@@ -112,7 +112,7 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 ## lms-service — port 8083
 
 **Purpose:** Post-disbursement loan lifecycle — loan creation, EMI schedule, repayment allocation, DPD/NPA.
-**Implementation status:** Disbursement is now wired — `createLoan` initiates disbursement and publishes `LoanDisbursed` (with the beneficiary propagated from customer-service at offer acceptance), so the loan reaches `ACTIVE` and interest accrual/repayment become reachable (previously the loan stalled at `CREATED`; not yet confirmed by a live run). REST surface and several lifecycle behaviors still incomplete.
+**Implementation status:** Disbursement is now wired — `createLoan` initiates disbursement and publishes `LoanDisbursed` (with the beneficiary propagated from customer-service at offer acceptance). A persistence fix now rehydrates the loan's child collections on load (previously `toDomain()` returned empty lists), so `confirmDisbursementByPayment` can find the INITIATED disbursement and the loan actually reaches `ACTIVE` via the payment path; the repayment path settles the schedule; and the DPD job classifies NPA. Verified by `LoanLifecycleIntegrationTest` (Testcontainers, CI); not yet confirmed by a full multi-service run. REST surface and several lifecycle behaviors still incomplete.
 
 **APIs implemented** (`LoanController`, `/v1/loans`):
 - `GET /{loanId}`
@@ -133,13 +133,13 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 **External integrations:** none direct (Kafka only).
 **Missing functionality:**
 - **Penal-interest bucket does not exist.** `Loan` has `outstandingPrincipal/Interest/Charges` only — no `outstandingPenal` field — yet the class Javadoc and method comment both claim the waterfall is "Charges → Penal → Interest → Principal." Actual waterfall is **Charges → Interest → Principal**.
-- **NPA aging never runs at runtime.** `updateDpd()` is defined and unit-tested but invoked by **no scheduler or consumer** — DPD/NPA classification cannot happen in a running system.
+- **NPA aging now runs.** `DpdAgingService` (daily 01:00, Asia/Kolkata) computes DPD from the oldest unpaid installment's due date and calls `updateDpd()`, classifying NPA/SUB_STANDARD/DOUBTFUL/LOSS. v1 persists classification only — provisioning postings, NPA interest-suspense, a classification event, and NPA→ACTIVE cure/upgrade remain deferred.
 - `RESTRUCTURED` is a reachable state with no schedule-regeneration logic behind it.
 - No create/disburse REST surface; pagination; auth.
 
 **Dead code:** `LoanUseCase.disburseLoan(...)` (zero callers anywhere) and `LoanUseCase.confirmDisbursement(...)` (4-arg application method — no adapter calls it; only `confirmDisbursementByPayment` is wired). Note: the **domain** method `loan.confirmDisbursement(...)` is used internally and is not dead.
 **TODOs:** none material (comments only).
-**Known risks:** downstream reconciliation assuming a penal bucket will be wrong; NPA reporting is impossible until a scheduler invokes `updateDpd()`.
+**Known risks:** downstream reconciliation assuming a penal bucket will be wrong; NPA provisioning/suspense not yet posted (classification runs, but income/provision impact is deferred).
 **Test coverage:** `LoanTest`, `ScheduleGeneratorTest` (domain).
 **Production readiness: 3.5/10.**
 
@@ -257,7 +257,7 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 | RLS runtime enforcement | `libs/spring-boot-starter` (needs a `SET LOCAL app.tenant_id` interceptor) | Multi-tenant isolation is decorative — policies exist but are never activated per-session. Cross-tenant data exposure risk. |
 | Real PAN/account encryption | `customer-service` (`encryptPan` stub) | Sensitive PII stored effectively in clear (`ENC:`-prefixed). DPDPA/RBI exposure. |
 | LIVE external integrations | `partner-integration-service` (7 adapters), `payment-service` (4 rails) | No real bureau pulls, KYC, or fund movement is possible — all throw in LIVE mode. |
-| NPA / DPD classification actually runs | `lms-service` (`updateDpd` invoked by nothing) | RBI asset-classification cannot happen in a running system; NPA reporting impossible. |
+| ~~NPA / DPD classification actually runs~~ **RESOLVED** | `lms-service` (`DpdAgingService` daily job) | Classification now runs; provisioning/suspense/cure still deferred. |
 
 ### High (blocks core lending journey completion or correctness)
 | Feature | Where | Why high |
@@ -303,12 +303,12 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 | los-service | 4/10 | Rich orchestration; referral approve/reject now wired; `recordCreditResult` still dead, no auth |
 | payment-service | 4/10 | Lifecycle + rail selection tested; sandbox rails, no auth |
 | notification-service | 4/10 | 4 channels + 35 triggers; recipient data missing, sandbox |
-| lms-service | 3.5/10 | Core Kafka flow works; no penal interest, NPA never runs, dead code |
+| lms-service | 4.5/10 | Core Kafka flow works; disbursement→ACTIVE, schedule settlement, and DPD/NPA aging now wired; no penal interest, NPA provisioning/suspense deferred, dead code remains |
 | ledger-service | 3.5/10 | Double-entry solid; single-tenant GL accounts, partition gap |
 | partner-integration-service | 3/10 | Well-structured but 100% sandbox, zero tests |
 | template-service | N/A | Scaffold |
 
-**Platform overall: ~4/10 — "internally coherent, not production-deployable."** The domain layer is genuinely well-built and the event choreography is sound and now bootstrappable (post-Phase 0). But five Critical gaps (no auth, inert RLS, PII in clear, all-sandbox integrations, NPA never runs) mean the platform cannot serve a real regulated lending workload today. The most valuable next step remains a genuine end-to-end boot of all services together (blocked in this local environment). The `REFERRED` dead-end has since been closed (manual approve/reject endpoints), so the core loan journey is now completable for referred applications, not just the auto-decisioned happy path.
+**Platform overall: ~4/10 — "internally coherent, not production-deployable."** The domain layer is genuinely well-built and the event choreography is sound and now bootstrappable (post-Phase 0). But four Critical gaps (no auth, inert RLS, PII in clear, all-sandbox integrations) mean the platform cannot serve a real regulated lending workload today — NPA classification now runs, though its provisioning/suspense accounting is still deferred. The most valuable next step remains a genuine end-to-end boot of all services together (blocked in this local environment). The `REFERRED` dead-end has since been closed (manual approve/reject endpoints), so the core loan journey is now completable for referred applications, not just the auto-decisioned happy path.
 
 ---
 
