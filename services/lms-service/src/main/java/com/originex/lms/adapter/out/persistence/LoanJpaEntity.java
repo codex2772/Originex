@@ -86,6 +86,9 @@ public class LoanJpaEntity {
     @Column(name = "last_payment_date")
     private LocalDate lastPaymentDate;
 
+    @Column(name = "last_accrual_date")
+    private LocalDate lastAccrualDate;
+
     @Column(name = "dpd", nullable = false)
     private int dpd;
 
@@ -138,6 +141,7 @@ public class LoanJpaEntity {
         e.maturityDate = loan.getMaturityDate();
         e.nextDueDate = loan.getNextDueDate();
         e.lastPaymentDate = loan.getLastPaymentDate();
+        e.lastAccrualDate = loan.getLastAccrualDate();
         e.dpd = loan.getDpd();
         e.maxDpd = loan.getMaxDpd();
         e.assetClassification = loan.getAssetClassification();
@@ -178,6 +182,7 @@ public class LoanJpaEntity {
         loan.setCurrency(currency);
         loan.setMaturityDate(maturityDate);
         loan.setNextDueDate(nextDueDate);
+        loan.setLastAccrualDate(lastAccrualDate);
         loan.setDpd(dpd);
         loan.setMaxDpd(maxDpd);
         loan.setAssetClassification(assetClassification);

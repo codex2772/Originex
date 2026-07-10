@@ -125,12 +125,13 @@
 ## 9. EMI Schedule — 🟡
 - **Business objective:** Generate and maintain the amortization schedule; accrue interest.
 - **Current implementation:** `ScheduleGenerator` (reducing-balance, last-installment residue settlement) runs at loan creation; `installments` persisted; tested (`ScheduleGeneratorTest`).
-- **Missing components:** **Interest accrual never runs** — `Loan.accrueInterest()` exists and ledger consumes `InterestAccrued`, but **no code publishes `InterestAccrued`** and `accrueInterest` is called by nothing; installment status aging (DUE/OVERDUE) is driven by nothing; no reschedule on part-payment.
-- **Responsible services:** lms-service (schedule), ledger-service (would post accruals).
+- **Missing components:** Installment status aging (DUE/OVERDUE) is driven by nothing; no reschedule on part-payment. (Interest accrual now runs — see below — but installment-level aging still does not.)
+- **Current implementation (accrual):** a daily `InterestAccrualService` scheduler (Actual/365 Fixed, ACTIVE loans only) computes accrual via `InterestAccrualCalculator`, applies `Loan.accrueInterest`, and publishes `originex.lms.InterestAccrued`, which the ledger consumer posts. Idempotent per-loan-per-day via `last_accrual_date`; disable-able via `originex.lms.accrual.enabled`. Still 🟡 (schedule generation, accrual now wired; but installment aging, penal interest, and NPA-suspense accrual remain).
+- **Responsible services:** lms-service (schedule + accrual), ledger-service (posts accruals).
 - **Database tables:** `installments`, `loans`.
 - **REST APIs:** `GET /v1/loans/{id}/repayment-schedule`.
-- **Kafka events:** `InterestAccrued` (consumer exists, **no producer**).
-- **Recommended next work:** Add a daily accrual job that calls `accrueInterest` and publishes `InterestAccrued`; age installments.
+- **Kafka events:** `InterestAccrued` (producer + consumer now both wired).
+- **Recommended next work:** Drive installment status aging (DUE/OVERDUE); reschedule on part-payment.
 
 ## 10. Repayment — 🟡
 - **Business objective:** Accept repayments and allocate them correctly against the loan.
@@ -235,12 +236,12 @@
 ## 20. Accounting — 🟡
 - **Business objective:** Immutable double-entry ledger as financial source of truth.
 - **Current implementation:** `JournalEntry` enforces `SUM(debits)=SUM(credits)`, ≥2 postings, reversal-only; ledger auto-posts on `LoanDisbursed` and `RepaymentAllocated`; event-sourced `ledger_events` + read models; 3 GL accounts seeded (Phase 0).
-- **Missing components:** `InterestAccrued` postings never happen (no producer); chart-of-accounts is **single-tenant** (3 hardcoded GL UUIDs seeded for the default tenant only — other tenants fail "Account not found"); `ledger_events` partitions exist only through Aug 2026.
+- **Missing components:** chart-of-accounts is **single-tenant** (3 hardcoded GL UUIDs seeded for the default tenant only — other tenants fail "Account not found"); `ledger_events` partitions exist only through Aug 2026. (`InterestAccrued` postings now occur — lms publishes the event and the ledger consumer posts DR Interest Receivable / CR Interest Income.)
 - **Responsible services:** ledger-service.
 - **Database tables:** `ledger_events` (partitioned), `account_snapshots`, `journal_entries`, `postings`, `outbox_events`, `inbox_events`.
 - **REST APIs:** `POST /v1/ledger/accounts`, `GET /accounts/{id}`, `POST /journal-entries`, `POST /journal-entries/{id}/reverse`.
 - **Kafka events:** consumes `LoanDisbursed`/`RepaymentAllocated`/`InterestAccrued`; produces `JournalEntryPosted`.
-- **Recommended next work:** Per-tenant chart-of-accounts service; partition automation; wire interest accrual.
+- **Recommended next work:** Per-tenant chart-of-accounts service; partition automation.
 
 ## 21. Notifications — 🟡
 - **Business objective:** RBI-mandated multi-channel borrower communication on lifecycle events.
@@ -295,7 +296,7 @@
 ---
 
 ## Cross-cutting themes (verified)
-1. **A recurring pattern: domain logic exists but is never invoked.** `levyCharge`, `accrueInterest`, `foreclose`, `updateDpd`, `disburseLoan`, and LOS `recordCreditResult` are implemented on aggregates/use-cases but have **no runtime caller** — so Charges, interest accrual, Foreclosure execution, NPA, and manual Disbursement remain "coded but unreachable." (Manual Underwriting was in this list — `refer`/`approveAndGenerateOffer` — and has now been wired.) Wiring these is disproportionately high-value versus writing new logic.
+1. **A recurring pattern: domain logic exists but is never invoked.** `levyCharge`, `foreclose`, `updateDpd`, `disburseLoan`, and LOS `recordCreditResult` are implemented on aggregates/use-cases but have **no runtime caller** — so Charges, Foreclosure execution, NPA, and manual Disbursement remain "coded but unreachable." (Manual Underwriting — `refer`/`approveAndGenerateOffer` — and interest accrual — `accrueInterest` — have since been wired.) Wiring these is disproportionately high-value versus writing new logic.
 2. **The core auto-decisioned journey works** (Customer → KYC → Application → Bureau → BRE → Offer → Disbursement → Ledger → Repayment → Notification), all in sandbox. The referral exception path is now actionable (manual approve/reject); the remaining exception paths (delinquency, restructure, settlement, write-off) are still 🔴.
 3. **No capability is production-complete** because of the three platform blockers: no authentication, RLS inert at runtime, and 100%-sandbox external integrations.
 

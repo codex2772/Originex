@@ -20,7 +20,7 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 | Event serialization | **JSON**, hand-built via `String.format(...).getBytes()`. Protobuf classes are generated but **referenced by zero service code** (verified). |
 | Outbox/Inbox | Transactional outbox used by customer/los/lms/ledger/payment (+template). `bre`, `partner`, `notification` do **not** publish via outbox (0 usages). No direct `KafkaTemplate` use outside the starter. |
 | Resilience4j | 21 `@CircuitBreaker` + 17 `@Retry` annotations across outbound adapters (bureau/KYC/bank/rails/channels/inter-service REST). |
-| Scheduled jobs | 2 only: notification retry (10 min), payment retry (5 min). **No** interest-accrual, DPD-aging, or NPA-classification scheduler. |
+| Scheduled jobs | 3: notification retry (10 min), payment retry (5 min), **lms interest-accrual (daily, `InterestAccrualService`)**. No DPD-aging or NPA-classification scheduler. |
 | Tests | 14 test files, **all domain/unit or migration-file level**. **Zero** `@Testcontainers`, zero `*IntegrationTest`/`*IT`. No web-layer or consumer integration tests. |
 | External integrations | **100% sandbox.** Every bureau/KYC/bank/payment-rail/notification-channel adapter throws `UnsupportedOperationException` in LIVE mode. |
 | Local runtime (this environment) | Not bootable end-to-end here: native Postgres occupies host 5432, and `cp-kafka` KRaft fails to format on this Docker host. Both are machine-specific, documented in `dev/PHASE0_VERIFICATION.md`; not repo defects. **No full multi-service boot has been observed.** |

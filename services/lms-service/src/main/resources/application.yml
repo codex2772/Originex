@@ -71,6 +71,14 @@ originex:
     topics:
       disbursement-requested: originex.los.applications.events
       loan-events: originex.lms.loans.events
+  lms:
+    # Daily interest accrual job. Set enabled=false to disable it in an
+    # environment (the scheduler bean is then not created and never runs).
+    accrual:
+      enabled: true
+      cron: "0 30 0 * * *"   # 00:30 in the configured zone
+      zone: Asia/Kolkata
+      batch-size: 500
 
 logging:
   level:
