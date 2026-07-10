@@ -3,6 +3,7 @@ package com.originex.customer.adapter.in.rest;
 import com.originex.common.tenant.TenantContextHolder;
 import com.originex.customer.application.port.in.CustomerUseCase;
 import com.originex.customer.application.port.in.CustomerUseCase.*;
+import com.originex.customer.domain.model.BankAccount;
 import com.originex.customer.domain.model.Customer;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -54,6 +55,26 @@ public class CustomerController {
         UUID tenantId = UUID.fromString(TenantContextHolder.requireTenantId());
         Customer customer = customerUseCase.getCustomer(tenantId, customerId);
         return ResponseEntity.ok(CustomerResponse.from(customer));
+    }
+
+    /**
+     * Primary bank account for disbursement (beneficiary details). Returns 404
+     * if the customer has no bank account on file. Note: returns the full
+     * account number for downstream fund transfer — this is an internal
+     * service-to-service endpoint (called by LOS at offer acceptance), not a
+     * customer-facing profile field, which is why it is separate from GET
+     * /{id} (that response intentionally omits account numbers).
+     */
+    @GetMapping("/{customerId}/bank-accounts/primary")
+    public ResponseEntity<PrimaryBankAccountResponse> getPrimaryBankAccount(@PathVariable UUID customerId) {
+        UUID tenantId = UUID.fromString(TenantContextHolder.requireTenantId());
+        Customer customer = customerUseCase.getCustomer(tenantId, customerId);
+        return customer.getBankAccounts().stream()
+                .filter(BankAccount::isPrimary)
+                .findFirst()
+                .map(PrimaryBankAccountResponse::from)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PutMapping("/{customerId}")
@@ -176,6 +197,20 @@ public class CustomerController {
     ) {}
 
     // ─── Response DTO ───
+
+    record PrimaryBankAccountResponse(
+            String accountNumber,
+            String ifscCode,
+            String accountHolderName,
+            String bankName,
+            boolean verified
+    ) {
+        static PrimaryBankAccountResponse from(BankAccount ba) {
+            return new PrimaryBankAccountResponse(
+                    ba.getAccountNumber(), ba.getIfscCode(),
+                    ba.getAccountHolderName(), ba.getBankName(), ba.isVerified());
+        }
+    }
 
     record CustomerResponse(
             UUID id,

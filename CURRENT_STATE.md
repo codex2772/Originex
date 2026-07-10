@@ -112,7 +112,7 @@ A 0–10 score per service, where **10 = deployable to a regulated production le
 ## lms-service — port 8083
 
 **Purpose:** Post-disbursement loan lifecycle — loan creation, EMI schedule, repayment allocation, DPD/NPA.
-**Implementation status:** Core disbursement→repayment works via Kafka; REST surface and several lifecycle behaviors incomplete.
+**Implementation status:** Disbursement is now wired — `createLoan` initiates disbursement and publishes `LoanDisbursed` (with the beneficiary propagated from customer-service at offer acceptance), so the loan reaches `ACTIVE` and interest accrual/repayment become reachable (previously the loan stalled at `CREATED`; not yet confirmed by a live run). REST surface and several lifecycle behaviors still incomplete.
 
 **APIs implemented** (`LoanController`, `/v1/loans`):
 - `GET /{loanId}`

@@ -12,6 +12,13 @@ public interface CustomerVerificationPort {
      */
     CustomerEligibility verifyCustomerEligibility(String tenantId, String customerId);
 
+    /**
+     * Resolve the customer's primary bank account for disbursement.
+     * @return the beneficiary details, or {@code null} if none is on file
+     *         (or Customer Service is unavailable).
+     */
+    BeneficiaryAccount getPrimaryBankAccount(String tenantId, String customerId);
+
     record CustomerEligibility(
             boolean exists,
             boolean kycVerified,
@@ -22,4 +29,11 @@ public interface CustomerVerificationPort {
             return exists && kycVerified;
         }
     }
+
+    record BeneficiaryAccount(
+            String accountNumber,
+            String ifscCode,
+            String accountHolderName,
+            String bankName
+    ) {}
 }

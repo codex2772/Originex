@@ -79,6 +79,24 @@ class LoanTest {
             assertThat(loan.getDisbursedAmount().getAmount()).isEqualByComparingTo("500000.0000");
             assertThat(loan.getOutstandingPrincipal().getAmount()).isEqualByComparingTo("500000.0000");
         }
+
+        @Test
+        void initiateDisbursementMovesToPendingAndCreatesInitiatedDisbursement() {
+            // Contract that createLoan (service) now relies on: after initiate, the loan
+            // is PENDING_DISBURSAL with one INITIATED disbursement for confirmDisbursementByPayment.
+            Loan loan = Loan.createFromApplication(
+                    TENANT, CUSTOMER, APPLICATION, "PERSONAL_LOAN",
+                    Money.of("500000", "INR"),
+                    new BigDecimal("12.5"), "FIXED",
+                    24, Money.of("23536.74", "INR"));
+
+            loan.initiateDisbursement(Money.of("500000", "INR"), "ACC-999");
+
+            assertThat(loan.getStatus()).isEqualTo(LoanStatus.PENDING_DISBURSAL);
+            assertThat(loan.getDisbursements()).hasSize(1);
+            assertThat(loan.getDisbursements().get(0).getStatus())
+                    .isEqualTo(Disbursement.DisbursementStatus.INITIATED);
+        }
     }
 
     @Nested

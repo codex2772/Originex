@@ -54,8 +54,26 @@ public class LoanApplicationServiceImpl implements LoanUseCase {
         List<Installment> schedule = ScheduleGenerator.generate(sanctioned, annualRate, command.tenureMonths(), firstDueDate);
         loan.setSchedule(schedule);
 
+        // The accepted offer is a disbursement instruction: initiate disbursement to the
+        // resolved beneficiary (CREATED → PENDING_DISBURSAL, creates an INITIATED
+        // disbursement) and ask the payment rail to execute the transfer via LoanDisbursed.
+        // On payments.DisbursementCompleted the loan is confirmed ACTIVE (PaymentEventConsumer).
+        loan.initiateDisbursement(sanctioned, command.beneficiaryAccount());
+
         Loan saved = loanRepository.save(loan);
-        log.info("Loan created: loanId={}, accountNumber={}", saved.getLoanId(), saved.getLoanAccountNumber());
+        log.info("Loan created and disbursement initiated: loanId={}, accountNumber={}",
+                saved.getLoanId(), saved.getLoanAccountNumber());
+
+        outboxPublisher.publish("Loan", saved.getLoanId(),
+                "originex.lms.LoanDisbursed", command.tenantId(),
+                String.format("{\"loan_id\":\"%s\",\"amount\":\"%s\",\"currency\":\"%s\"," +
+                                "\"beneficiary_account\":\"%s\",\"beneficiary_ifsc\":\"%s\"," +
+                                "\"beneficiary_name\":\"%s\",\"customer_id\":\"%s\"}",
+                                saved.getLoanId(), sanctioned.getAmount().toPlainString(), currency,
+                                command.beneficiaryAccount(), command.beneficiaryIfsc(),
+                                command.beneficiaryName(), command.customerId())
+                        .getBytes(StandardCharsets.UTF_8));
+
         return saved;
     }
 

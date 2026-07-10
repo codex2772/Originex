@@ -88,7 +88,11 @@ public class DisbursementRequestedConsumer {
                     json.has("rate_type") ? json.get("rate_type").asText() : "FIXED",
                     json.get("tenure_months").asInt(),
                     json.get("emi").asText(),
-                    json.has("currency") ? json.get("currency").asText() : "INR"
+                    json.has("currency") ? json.get("currency").asText() : "INR",
+                    json.has("beneficiary_account") ? json.get("beneficiary_account").asText() : null,
+                    json.has("beneficiary_ifsc") ? json.get("beneficiary_ifsc").asText() : null,
+                    json.has("beneficiary_name") ? json.get("beneficiary_name").asText() : null,
+                    json.has("beneficiary_bank") ? json.get("beneficiary_bank").asText() : null
             );
 
             loanUseCase.createLoan(command);

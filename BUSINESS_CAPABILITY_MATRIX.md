@@ -114,8 +114,8 @@
 
 ## 8. Disbursement — 🟡
 - **Business objective:** Move sanctioned funds to the borrower and record it.
-- **Current implementation:** Full choreography works in sandbox: LOS `DisbursementRequested` → LMS `createLoan` + schedule → LMS `LoanDisbursed` → payment `LmsPaymentEventConsumer` selects rail (>₹5L RTGS / ₹2L–₹5L IMPS / <₹2L NEFT) → `DisbursementCompleted` → LMS confirms (loan ACTIVE) → ledger posts DR receivable / CR pool.
-- **Missing components:** No manual disburse/retry REST (`disburseLoan` is dead code); `DISBURSEMENT_FAILED` recovery path unreachable; all payment rails sandbox.
+- **Current implementation:** Choreography is now wired end-to-end (previously it stalled at `CREATED` — `createLoan` published no `LoanDisbursed`; fixed): at offer acceptance LOS resolves the borrower's primary bank account from `customer-service` and carries it in `DisbursementRequested`; LMS `createLoan` generates the schedule, **`initiateDisbursement` (→ `PENDING_DISBURSAL`, `INITIATED` disbursement)**, and publishes `LoanDisbursed` (with beneficiary) → payment `LmsPaymentEventConsumer` selects rail (>₹5L RTGS / ₹2L–₹5L IMPS / <₹2L NEFT), sandbox completes → `DisbursementCompleted` → LMS `confirmDisbursementByPayment` → loan **ACTIVE** → ledger posts DR receivable / CR pool. **Not yet confirmed by a live multi-service run** (env blockers).
+- **Missing components:** beneficiary is used **unverified** (penny-drop verify endpoint is unwired dead code); no manual disburse/retry REST (`disburseLoan`/4-arg `confirmDisbursement` remain dead); `DISBURSEMENT_FAILED` recovery path unreachable; all payment rails sandbox; the customer bank-account endpoint returns a full account number over an unauthenticated internal call.
 - **Responsible services:** los, lms, payment, ledger.
 - **Database tables:** `loans`, `disbursements`, `payment_orders`; ledger `journal_entries`/`postings`.
 - **REST APIs:** `POST /v1/payments/disbursements` (payment side).

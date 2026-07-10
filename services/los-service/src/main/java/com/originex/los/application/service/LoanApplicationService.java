@@ -312,6 +312,16 @@ public class LoanApplicationService implements LoanApplicationUseCase {
         LoanApplication app = applicationRepository.findById(tenantId, applicationId)
                 .orElseThrow(() -> new ApplicationNotFoundException(applicationId));
 
+        // Resolve the disbursement beneficiary before transitioning, so a missing
+        // bank account fails cleanly (app stays OFFER_PENDING, retryable) rather
+        // than producing a loan that can never be disbursed.
+        CustomerVerificationPort.BeneficiaryAccount beneficiary =
+                customerVerificationPort.getPrimaryBankAccount(tenantId.toString(), app.getCustomerId().toString());
+        if (beneficiary == null || beneficiary.accountNumber() == null || beneficiary.ifscCode() == null) {
+            throw new IllegalStateException(
+                    "No bank account on file for disbursement; add a bank account before accepting the offer");
+        }
+
         app.acceptOffer();
         app.requestDisbursement();
 
@@ -320,7 +330,7 @@ public class LoanApplicationService implements LoanApplicationUseCase {
 
         outboxPublisher.publish("LoanApplication", applicationId,
                 "originex.los.DisbursementRequested", tenantId,
-                buildDisbursementRequestedPayload(saved));
+                buildDisbursementRequestedPayload(saved, beneficiary));
 
         return saved;
     }
@@ -348,17 +358,22 @@ public class LoanApplicationService implements LoanApplicationUseCase {
         ).getBytes(StandardCharsets.UTF_8);
     }
 
-    private byte[] buildDisbursementRequestedPayload(LoanApplication app) {
+    private byte[] buildDisbursementRequestedPayload(LoanApplication app,
+                                                     CustomerVerificationPort.BeneficiaryAccount beneficiary) {
         var offer = app.getCurrentOffer();
         return String.format(
                 "{\"application_id\":\"%s\",\"customer_id\":\"%s\",\"product_code\":\"%s\"," +
                         "\"sanctioned_amount\":\"%s\",\"interest_rate\":\"%s\",\"rate_type\":\"FIXED\"," +
-                        "\"tenure_months\":%d,\"emi\":\"%s\",\"currency\":\"%s\"}",
+                        "\"tenure_months\":%d,\"emi\":\"%s\",\"currency\":\"%s\"," +
+                        "\"beneficiary_account\":\"%s\",\"beneficiary_ifsc\":\"%s\"," +
+                        "\"beneficiary_name\":\"%s\",\"beneficiary_bank\":\"%s\"}",
                 app.getApplicationId(), app.getCustomerId(), app.getProductCode(),
                 offer.getSanctionedAmount().getAmount().toPlainString(),
                 offer.getInterestRate().toPlainString(),
                 offer.getTenureMonths(), offer.getEmi().getAmount().toPlainString(),
-                offer.getSanctionedAmount().getCurrencyCode()
+                offer.getSanctionedAmount().getCurrencyCode(),
+                beneficiary.accountNumber(), beneficiary.ifscCode(),
+                beneficiary.accountHolderName(), beneficiary.bankName()
         ).getBytes(StandardCharsets.UTF_8);
     }
 }
