@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Local-developer Maven settings for running the build and (integration) tests
+  without private-registry credentials.
+
+  The default ~/.m2/settings.xml on some machines mirrors `central` to a private
+  registry that requires auth; that makes public, pinned artifacts (e.g.
+  org.postgresql:postgresql, org.testcontainers:*) fail with HTTP 401. This file
+  declares NO such mirror, so `central` resolves from Maven Central directly.
+
+  Usage:
+    mvn -s dev/settings.xml verify -Pintegration-test
+    mvn -s dev/settings.xml -pl services/lms-service -am verify -Pintegration-test
+
+  CI uses its own credentialed settings and does not need this file; the
+  integration tests (*IntegrationTest / *IT) run there via `mvn verify
+  -Pintegration-test` unchanged.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                              https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+  <localRepository>${user.home}/.m2/repository</localRepository>
+
+  <profiles>
+    <profile>
+      <id>public-repos</id>
+      <repositories>
+        <repository>
+          <id>maven-central</id>
+          <url>https://repo1.maven.org/maven2</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+          <id>confluent</id>
+          <url>https://packages.confluent.io/maven/</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>maven-central-plugins</id>
+          <url>https://repo1.maven.org/maven2</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+
+  <activeProfiles>
+    <activeProfile>public-repos</activeProfile>
+  </activeProfiles>
+</settings>
