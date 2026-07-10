@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -188,6 +190,86 @@ class LoanTest {
             Loan loan = createActiveLoan();
             loan.allocateRepayment(Money.of("500000", "INR"));
             assertThat(loan.getStatus()).isEqualTo(LoanStatus.MATURED);
+        }
+    }
+
+    @Nested
+    @DisplayName("Schedule Settlement On Repayment")
+    class ScheduleSettlement {
+
+        private static final LocalDate D1 = LocalDate.now().plusDays(30);
+
+        // 3 installments of 100000 principal + 5000 interest (total 105000 each).
+        private Loan activeLoanWithSchedule() {
+            Loan loan = createActiveLoan();
+            List<Installment> schedule = List.of(
+                    Installment.create(1, D1, Money.of("100000", "INR"), Money.of("5000", "INR")),
+                    Installment.create(2, D1.plusMonths(1), Money.of("100000", "INR"), Money.of("5000", "INR")),
+                    Installment.create(3, D1.plusMonths(2), Money.of("100000", "INR"), Money.of("5000", "INR"))
+            );
+            loan.setSchedule(schedule);
+            return loan;
+        }
+
+        @Test
+        void shouldMarkOldestInstallmentPaidAndAdvanceNextDueDate() {
+            Loan loan = activeLoanWithSchedule();
+            loan.accrueInterest(Money.of("5000", "INR"));
+            assertThat(loan.getNextDueDate()).isEqualTo(D1);
+
+            loan.allocateRepayment(Money.of("105000", "INR")); // 5000 interest + 100000 principal
+
+            Installment first = loan.getInstallments().get(0);
+            assertThat(first.getStatus()).isEqualTo(Installment.InstallmentStatus.PAID);
+            assertThat(first.getInterestPaid().getAmount()).isEqualByComparingTo("5000.0000");
+            assertThat(first.getPrincipalPaid().getAmount()).isEqualByComparingTo("100000.0000");
+            assertThat(loan.getInstallments().get(1).getStatus()).isEqualTo(Installment.InstallmentStatus.UPCOMING);
+            assertThat(loan.getNextDueDate()).isEqualTo(D1.plusMonths(1));
+        }
+
+        @Test
+        void shouldPartiallyPayAndKeepNextDueDateOnSameInstallment() {
+            Loan loan = activeLoanWithSchedule();
+            // No accrued interest → whole 50000 is principal at loan level; the
+            // installment still fills its interest-due first, then principal.
+            loan.allocateRepayment(Money.of("50000", "INR"));
+
+            Installment first = loan.getInstallments().get(0);
+            assertThat(first.getStatus()).isEqualTo(Installment.InstallmentStatus.PARTIALLY_PAID);
+            assertThat(first.getInterestPaid().getAmount()).isEqualByComparingTo("5000.0000");
+            assertThat(first.getPrincipalPaid().getAmount()).isEqualByComparingTo("45000.0000");
+            assertThat(loan.getNextDueDate()).isEqualTo(D1); // oldest unpaid unchanged
+        }
+
+        @Test
+        void shouldSettleMultipleInstallmentsOldestFirst() {
+            Loan loan = activeLoanWithSchedule();
+            loan.allocateRepayment(Money.of("210000", "INR")); // covers installments 1 and 2
+
+            assertThat(loan.getInstallments().get(0).getStatus()).isEqualTo(Installment.InstallmentStatus.PAID);
+            assertThat(loan.getInstallments().get(1).getStatus()).isEqualTo(Installment.InstallmentStatus.PAID);
+            assertThat(loan.getInstallments().get(2).getStatus()).isEqualTo(Installment.InstallmentStatus.UPCOMING);
+            assertThat(loan.getNextDueDate()).isEqualTo(D1.plusMonths(2));
+        }
+
+        @Test
+        void shouldMarkAllInstallmentsPaidWhenLoanMatures() {
+            Loan loan = activeLoanWithSchedule();
+            loan.allocateRepayment(Money.of("500000", "INR")); // zeroes loan principal → MATURED
+
+            assertThat(loan.getStatus()).isEqualTo(LoanStatus.MATURED);
+            assertThat(loan.getInstallments())
+                    .allMatch(i -> i.getStatus() == Installment.InstallmentStatus.PAID);
+        }
+
+        @Test
+        void shouldNotTouchScheduleWhenLoadedWithoutInstallments() {
+            // A loan loaded without its children (e.g. a lean path) must not be
+            // corrupted by a repayment — settlement is a no-op, balances still move.
+            Loan loan = createActiveLoan(); // no schedule set
+            loan.allocateRepayment(Money.of("10000", "INR"));
+            assertThat(loan.getInstallments()).isEmpty();
+            assertThat(loan.getOutstandingPrincipal().getAmount()).isEqualByComparingTo("490000.0000");
         }
     }
 

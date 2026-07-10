@@ -157,6 +157,10 @@ class LoanLifecycleIntegrationTest {
         loanUseCase.recordRepayment(new LoanUseCase.RecordRepaymentCommand(
                 UUID.fromString(TENANT), loanId, "10000", "INR", "PAY-REPAY-1"));
         assertThat(outboxPayload("originex.lms.RepaymentAllocated")).contains(loanId.toString());
+        // repayment settled the schedule: the oldest installment now shows paid amounts
+        assertThat(jdbc.queryForObject(
+                "select count(*) from installments where loan_id = ? and (principal_paid > 0 or interest_paid > 0)",
+                Integer.class, loanId)).isGreaterThanOrEqualTo(1);
     }
 
     // ── helpers ──

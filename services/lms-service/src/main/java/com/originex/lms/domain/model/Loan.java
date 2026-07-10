@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -184,6 +185,11 @@ public class Loan {
         }
 
         this.lastPaymentDate = LocalDate.now();
+
+        // Settle the amortization schedule oldest-installment-first with the
+        // interest + principal actually allocated, and advance the next due date.
+        settleSchedule(interestAllocated.add(principalAllocated));
+
         this.updatedAt = Instant.now();
 
         // Check if loan is fully paid
@@ -262,6 +268,35 @@ public class Loan {
     // ═══════════════════════════════════════════════════════════════════
     // Helpers
     // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Distributes {@code amount} across the schedule oldest-installment-first
+     * (each installment interest-due then principal-due), then advances
+     * {@code nextDueDate} to the oldest installment not yet fully paid. Leaves
+     * {@code nextDueDate} unchanged when the schedule is absent (a loan loaded
+     * without its children must not be settled) or fully paid.
+     */
+    private void settleSchedule(Money amount) {
+        if (installments == null || installments.isEmpty() || !amount.isPositive()) {
+            return;
+        }
+        List<Installment> ordered = installments.stream()
+                .sorted(Comparator.comparingInt(Installment::getInstallmentNumber))
+                .toList();
+
+        Money remaining = amount;
+        for (Installment inst : ordered) {
+            if (!remaining.isPositive()) break;
+            if (inst.isFullyPaid()) continue;
+            remaining = remaining.subtract(inst.applyPayment(remaining));
+        }
+
+        ordered.stream()
+                .filter(i -> !i.isFullyPaid())
+                .map(Installment::getDueDate)
+                .findFirst()
+                .ifPresent(d -> this.nextDueDate = d);
+    }
 
     private void transitionTo(LoanStatus target) {
         if (!status.canTransitionTo(target)) {

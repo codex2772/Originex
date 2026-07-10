@@ -76,6 +76,44 @@ public class Installment {
         this.paidDate = LocalDate.now();
     }
 
+    /**
+     * Applies part of a repayment to this installment, interest-due first then
+     * principal-due, up to what each still owes. Advances the paid amounts and
+     * status ({@code PAID} once both dues are fully covered, otherwise
+     * {@code PARTIALLY_PAID}) and returns the amount actually consumed so the
+     * caller can carry any remainder to the next installment.
+     */
+    public Money applyPayment(Money amount) {
+        Money consumed = Money.zero(principalDue.getCurrencyCode());
+
+        Money interestOwed = interestDue.subtract(interestPaid);
+        if (amount.isPositive() && interestOwed.isPositive()) {
+            Money portion = amount.min(interestOwed);
+            interestPaid = interestPaid.add(portion);
+            amount = amount.subtract(portion);
+            consumed = consumed.add(portion);
+        }
+
+        Money principalOwed = principalDue.subtract(principalPaid);
+        if (amount.isPositive() && principalOwed.isPositive()) {
+            Money portion = amount.min(principalOwed);
+            principalPaid = principalPaid.add(portion);
+            consumed = consumed.add(portion);
+        }
+
+        if (principalPaid.isGreaterThanOrEqual(principalDue) && interestPaid.isGreaterThanOrEqual(interestDue)) {
+            this.status = InstallmentStatus.PAID;
+            this.paidDate = LocalDate.now();
+        } else if (principalPaid.isPositive() || interestPaid.isPositive()) {
+            this.status = InstallmentStatus.PARTIALLY_PAID;
+        }
+        return consumed;
+    }
+
+    public boolean isFullyPaid() {
+        return status == InstallmentStatus.PAID;
+    }
+
     public UUID getInstallmentId() { return installmentId; }
     public int getInstallmentNumber() { return installmentNumber; }
     public LocalDate getDueDate() { return dueDate; }
