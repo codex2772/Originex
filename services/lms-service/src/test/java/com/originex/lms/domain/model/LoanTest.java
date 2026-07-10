@@ -297,5 +297,39 @@ class LoanTest {
             loan.updateDpd(730);
             assertThat(loan.getAssetClassification()).isEqualTo("LOSS");
         }
+
+        @Test
+        void calculateDpdIsDaysSinceOldestUnpaidDueDate() {
+            Loan loan = createActiveLoan();
+            loan.setSchedule(List.of(
+                    Installment.create(1, LocalDate.now().minusDays(45), Money.of("100000", "INR"), Money.of("5000", "INR"))));
+
+            assertThat(loan.calculateDpd(LocalDate.now())).isEqualTo(45);
+        }
+
+        @Test
+        void calculateDpdIsZeroWhenNotYetDueOrNoSchedule() {
+            Loan noSchedule = createActiveLoan();
+            assertThat(noSchedule.calculateDpd(LocalDate.now())).isZero();
+
+            Loan current = createActiveLoan();
+            current.setSchedule(List.of(
+                    Installment.create(1, LocalDate.now().plusDays(10), Money.of("100000", "INR"), Money.of("5000", "INR"))));
+            assertThat(current.calculateDpd(LocalDate.now())).isZero();
+        }
+
+        @Test
+        void agingClassifiesNpaOnceOverdue90Days() {
+            // Drives the exact logic the DPD aging job runs: calculateDpd → updateDpd.
+            Loan loan = createActiveLoan();
+            loan.setSchedule(List.of(
+                    Installment.create(1, LocalDate.now().minusDays(95), Money.of("100000", "INR"), Money.of("5000", "INR"))));
+
+            loan.updateDpd(loan.calculateDpd(LocalDate.now()));
+
+            assertThat(loan.getStatus()).isEqualTo(LoanStatus.NPA);
+            assertThat(loan.getAssetClassification()).isEqualTo("SUB_STANDARD");
+            assertThat(loan.getMaxDpd()).isEqualTo(95);
+        }
     }
 }

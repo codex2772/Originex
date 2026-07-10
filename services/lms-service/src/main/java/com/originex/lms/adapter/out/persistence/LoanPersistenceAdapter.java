@@ -57,4 +57,12 @@ public class LoanPersistenceAdapter implements LoanRepository {
         return jpaRepository.findAccruable(asOf, afterLoanId, PageRequest.of(0, limit))
                 .stream().map(LoanJpaEntity::toDomain).toList();
     }
+
+    @Override
+    public List<Loan> findDelinquent(LocalDate asOf, UUID afterLoanId, int limit) {
+        // Lean projection for eligibility only (no children); the DPD processor
+        // re-loads each loan with its children before saving.
+        return jpaRepository.findDelinquent(asOf, afterLoanId, PageRequest.of(0, limit))
+                .stream().map(LoanJpaEntity::toDomain).toList();
+    }
 }

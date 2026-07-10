@@ -81,6 +81,7 @@ class LoanLifecycleIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired LoanUseCase loanUseCase;
     @Autowired InterestAccrualService accrual;
+    @Autowired com.originex.lms.application.service.DpdAgingService dpdAging;
 
     @BeforeAll
     static void startProducer() {
@@ -161,6 +162,16 @@ class LoanLifecycleIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "select count(*) from installments where loan_id = ? and (principal_paid > 0 or interest_paid > 0)",
                 Integer.class, loanId)).isGreaterThanOrEqualTo(1);
+
+        // ── 6. DPD / NPA aging: back-date the due date past 90 days, run the job → NPA ──
+        jdbc.update("update loans set next_due_date = ? where loan_id = ?",
+                java.time.LocalDate.now().minusDays(95), loanId);
+        dpdAging.runDailyAging();
+        assertThat(statusById(loanId)).isEqualTo("NPA");
+        assertThat(jdbc.queryForObject("select asset_classification from loans where loan_id = ?",
+                String.class, loanId)).isEqualTo("SUB_STANDARD");
+        assertThat(jdbc.queryForObject("select dpd from loans where loan_id = ?",
+                Integer.class, loanId)).isGreaterThanOrEqualTo(90);
     }
 
     // ── helpers ──

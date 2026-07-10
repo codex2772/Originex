@@ -25,4 +25,15 @@ public interface LoanJpaRepository extends JpaRepository<LoanJpaEntity, UUID> {
             + "AND (:afterLoanId IS NULL OR l.loanId > :afterLoanId) "
             + "ORDER BY l.loanId")
     List<LoanJpaEntity> findAccruable(LocalDate asOf, UUID afterLoanId, Pageable pageable);
+
+    // Delinquency recompute set, keyset-paginated by loanId: ACTIVE/NPA loans that
+    // are overdue for :asOf or still carry a non-zero DPD (so cured loans reset).
+    @Query("SELECT l FROM LoanJpaEntity l "
+            + "WHERE l.status IN (com.originex.lms.domain.model.LoanStatus.ACTIVE, "
+            + "                   com.originex.lms.domain.model.LoanStatus.NPA) "
+            + "AND l.nextDueDate IS NOT NULL "
+            + "AND (l.nextDueDate < :asOf OR l.dpd > 0) "
+            + "AND (:afterLoanId IS NULL OR l.loanId > :afterLoanId) "
+            + "ORDER BY l.loanId")
+    List<LoanJpaEntity> findDelinquent(LocalDate asOf, UUID afterLoanId, Pageable pageable);
 }

@@ -234,6 +234,19 @@ public class Loan {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Days-past-due as of {@code asOf}: calendar days since the oldest unpaid
+     * installment's due date ({@link #nextDueDate}, which repayment advances to
+     * the oldest not-fully-paid installment). Zero when nothing is due yet or the
+     * schedule is absent. The caller supplies {@code asOf} in the business zone.
+     */
+    public int calculateDpd(LocalDate asOf) {
+        if (nextDueDate == null || !asOf.isAfter(nextDueDate)) {
+            return 0;
+        }
+        return (int) java.time.temporal.ChronoUnit.DAYS.between(nextDueDate, asOf);
+    }
+
     public void updateDpd(int newDpd) {
         this.dpd = newDpd;
         if (newDpd > this.maxDpd) this.maxDpd = newDpd;

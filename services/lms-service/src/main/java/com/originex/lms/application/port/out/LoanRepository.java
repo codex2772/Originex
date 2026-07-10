@@ -22,4 +22,12 @@ public interface LoanRepository {
      * tenant-scoped — the accrual job runs system-wide.
      */
     List<Loan> findAccruable(LocalDate asOf, UUID afterLoanId, int limit);
+
+    /**
+     * ACTIVE/NPA loans whose delinquency should be recomputed for {@code asOf} —
+     * those overdue ({@code nextDueDate < asOf}) or still carrying a non-zero DPD
+     * (so a loan that has since become current is reset). Ordered by
+     * {@code loanId} for keyset pagination; not tenant-scoped (system-wide job).
+     */
+    List<Loan> findDelinquent(LocalDate asOf, UUID afterLoanId, int limit);
 }

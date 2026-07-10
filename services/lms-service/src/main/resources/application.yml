@@ -83,6 +83,13 @@ originex:
       cron: "0 30 0 * * *"   # 00:30 in the configured zone
       zone: Asia/Kolkata
       batch-size: 500
+    # Daily DPD / NPA aging job. Runs after accrual (01:00) so classification
+    # reflects the day's balances. Set enabled=false to disable the scheduler bean.
+    dpd:
+      enabled: true
+      cron: "0 0 1 * * *"    # 01:00 in the configured zone
+      zone: Asia/Kolkata
+      batch-size: 500
 
 logging:
   level:
