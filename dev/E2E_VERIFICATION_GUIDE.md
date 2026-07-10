@@ -38,8 +38,9 @@
 ### Known blockers (environment-specific — from `dev/PHASE0_VERIFICATION.md`)
 1. **A native PostgreSQL on host 5432** prevents `originex-postgres` from binding. If your machine already runs Postgres, stop it or remap the compose port.
 2. **`cp-kafka` KRaft may fail to format its log dir** on some Docker Desktop hosts (`bootstrap.checkpoint.tmp` error). Reproduced on the authoring machine; if hit, try a different host / Docker backend.
-3. **Private Maven registry access**: the pinned `org.postgresql:postgresql:42.7.4` and Testcontainers artifacts resolve from a private registry that may return `401`. Without them you can `mvn compile` (cached) but **cannot build runnable JARs or run the services**. A clean machine with registry access is required to actually run the platform. `mvn test` is likewise blocked there.
-4. **No auth / API gateway** — services are called directly on their ports.
+3. **Private Maven registry `401`**: the default `~/.m2/settings.xml` on some machines mirrors `central` to a private registry that 401s for public pinned artifacts (`postgresql:42.7.4`, `testcontainers:*`). **Resolved** by building with `mvn -s dev/settings.xml …`, which resolves those from Maven Central directly (no private creds). CI uses its own credentialed settings and needs nothing extra.
+4. **Testcontainers ↔ Docker Desktop v29** (authoring machine only): Testcontainers 1.20.4/1.21.3's bundled docker-java gets HTTP `400` from this host's Docker Desktop v29 socket (`Could not find a valid Docker environment`), even though the daemon serves the CLI and `curl --unix-socket … /v1.44/info` fine (API 1.40–1.55 supported). This blocks running the Testcontainers integration test *locally on this machine only*; it runs in **CI** (standard Docker engine) via `mvn verify -Pintegration-test`. Bumping `testcontainers.version` to a Docker-29-compatible release would unblock local runs (a pinned-dependency change, deliberately not made here).
+5. **No auth / API gateway** — services are called directly on their ports.
 
 ### Startup order
 1. Infrastructure (compose): postgres → kafka → schema-registry → redis → kafka-ui.
@@ -301,6 +302,26 @@ SELECT account_number, balance FROM account_snapshots ORDER BY account_number;  
 | Accounting (ledger) | **Partial** | Single-tenant GL; only reachable via `lms.*` events | Per-tenant chart-of-accounts |
 | Notifications | **Partial** | Recipient phone/email from payload; channels sandbox | Customer-profile lookup; LIVE channels |
 | Audit / Reporting / Security / Multi-tenancy(RLS) | **No** | Not implemented / inert | Dedicated services; JWT/RBAC; RLS runtime enforcement |
+
+## 10. Automated verification harness (Priority 1)
+
+Two artifacts were added so the flow can be verified repeatably rather than only by manual `curl`:
+
+### 10.1 `LoanLifecycleIntegrationTest` (Testcontainers — automated, CI)
+`services/lms-service/src/test/java/com/originex/lms/integration/LoanLifecycleIntegrationTest.java` boots the real LMS Spring context against a Testcontainers Postgres + Kafka and drives the LMS slice that the recent commits wired, asserting DB / outbox / inbox side effects:
+1. Publish `originex.los.DisbursementRequested` → loan `PENDING_DISBURSAL`, one `INITIATED` disbursement, `LoanDisbursed` in the outbox **carrying the beneficiary**, and the request id in `inbox_events`.
+2. Redeliver the same event → **inbox idempotency** (no second loan).
+3. Publish `originex.payments.DisbursementCompleted` → loan **ACTIVE**, `last_accrual_date` set.
+4. Time-shift `last_accrual_date` back, run accrual → `outstanding_interest` grows + `InterestAccrued` published; same-day rerun → **idempotent** (no further accrual).
+5. `recordRepayment` on the ACTIVE loan → `RepaymentAllocated` (proves repayment is reachable — would have thrown *"not active"* on a `CREATED` loan).
+
+Run: `mvn -s dev/settings.xml -pl services/lms-service -am verify -Pintegration-test`. It is a `*IntegrationTest`, so CI runs it via the existing `mvn verify -Pintegration-test` (failsafe). **Status:** compiles and the Spring context bootstraps; it could not be executed on the authoring machine due to blocker §1.4 (Testcontainers ↔ Docker v29). Runs in CI.
+
+### 10.2 `dev/scripts/e2e-smoke.sh` (full-stack orchestration — the onboarding→repayment complement)
+Walks the whole journey across the running services with REST + DB + Kafka + outbox/inbox assertions: health → register → KYC → **add bank account** → application → credit-check/BRE (auto-approve or manual approve on referral) → accept → LMS loan+disbursement → payment → **ACTIVE** → ledger posting → repayment. It does **not** start the services (prereqs at the top of the script); intended for a clean host or CI. Verified against the current DTOs/endpoints/event-types (its `id` response fields, `panNumber`, and the `/bank-accounts/primary` endpoint all match source); syntax-checked (`bash -n`). Not run here (requires all 8 services + healthy infra, blocked by §1.1–§1.2 on this machine).
+
+### 10.3 Issue surfaced by the harness
+Building this harness uncovered a Kafka serde misconfiguration in `lms-service` that would have stopped it consuming or publishing events at runtime; it has since been **fixed** in a separate production commit (details in `CLAUDE_ANALYSIS.md` §9 backlog). The integration test now validates LMS consume+publish end-to-end, so the fix stays verified.
 
 ### Bottom line
 The disbursement gap that previously stopped the lifecycle at `CREATED` has now been **wired**: offer acceptance resolves the beneficiary from `customer-service`, and `createLoan` initiates disbursement and publishes `LoanDisbursed`. In code, the journey now flows Customer → … → Accept → **loan created + disbursed** → payment (sandbox) → **ACTIVE** → ledger posting → interest accrual → repayment → `MATURED`. **This has not yet been confirmed by a live multi-service run** (environment blockers, §1) — that end-to-end execution is the remaining verification. Two follow-ups were surfaced (unverified beneficiary; unauthenticated full-account-number endpoint), both tracked. Sections 8’s table rows above that still read “No (via flow)” predate this fix and should be read together with §6/Step 7–13.
