@@ -36,6 +36,29 @@ public class Installment {
         return inst;
     }
 
+    /**
+     * Rebuilds an installment from persisted state (adapter/JPA use only). Unlike
+     * {@link #create}, this restores paid amounts, status, and paid date so a
+     * loaded schedule reflects prior repayments.
+     */
+    public static Installment reconstitute(UUID installmentId, int installmentNumber, LocalDate dueDate,
+                                           Money principalDue, Money interestDue, Money totalDue,
+                                           Money principalPaid, Money interestPaid,
+                                           InstallmentStatus status, LocalDate paidDate) {
+        Installment inst = new Installment();
+        inst.installmentId = installmentId;
+        inst.installmentNumber = installmentNumber;
+        inst.dueDate = dueDate;
+        inst.principalDue = principalDue;
+        inst.interestDue = interestDue;
+        inst.totalDue = totalDue;
+        inst.principalPaid = principalPaid;
+        inst.interestPaid = interestPaid;
+        inst.status = status;
+        inst.paidDate = paidDate;
+        return inst;
+    }
+
     public void markDue() {
         if (this.status == InstallmentStatus.UPCOMING) {
             this.status = InstallmentStatus.DUE;

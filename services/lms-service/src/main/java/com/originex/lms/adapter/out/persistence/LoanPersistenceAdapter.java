@@ -2,6 +2,7 @@ package com.originex.lms.adapter.out.persistence;
 
 import com.originex.lms.application.port.out.LoanRepository;
 import com.originex.lms.domain.model.Loan;
+import org.hibernate.Hibernate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
@@ -29,13 +30,26 @@ public class LoanPersistenceAdapter implements LoanRepository {
     @Override
     public Optional<Loan> findById(UUID tenantId, UUID loanId) {
         return jpaRepository.findByTenantAndId(tenantId, loanId)
-                .map(LoanJpaEntity::toDomain);
+                .map(LoanPersistenceAdapter::toDomainWithChildren);
     }
 
     @Override
     public Optional<Loan> findByApplicationId(UUID tenantId, UUID applicationId) {
         return jpaRepository.findByTenantAndApplicationId(tenantId, applicationId)
-                .map(LoanJpaEntity::toDomain);
+                .map(LoanPersistenceAdapter::toDomainWithChildren);
+    }
+
+    /**
+     * Maps a loaded loan to the domain with its installment and disbursement
+     * collections rehydrated. Both are LAZY bags; initializing them separately
+     * (two SELECTs) avoids the {@code MultipleBagFetchException} a single
+     * join-fetch of two lists would raise. Callers of {@code findById} /
+     * {@code findByApplicationId} run in a transaction, so the session is open.
+     */
+    private static Loan toDomainWithChildren(LoanJpaEntity entity) {
+        Hibernate.initialize(entity.getInstallmentEntities());
+        Hibernate.initialize(entity.getDisbursementEntities());
+        return entity.toDomain();
     }
 
     @Override

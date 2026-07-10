@@ -25,6 +25,24 @@ public class Disbursement {
         return d;
     }
 
+    /**
+     * Rebuilds a disbursement from persisted state (adapter/JPA use only),
+     * restoring its reference, status, and timestamps.
+     */
+    public static Disbursement reconstitute(UUID disbursementId, Money amount, String beneficiaryAccount,
+                                            String paymentReference, DisbursementStatus status,
+                                            Instant initiatedAt, Instant completedAt) {
+        Disbursement d = new Disbursement();
+        d.disbursementId = disbursementId;
+        d.amount = amount;
+        d.beneficiaryAccount = beneficiaryAccount;
+        d.paymentReference = paymentReference;
+        d.status = status;
+        d.initiatedAt = initiatedAt;
+        d.completedAt = completedAt;
+        return d;
+    }
+
     public void confirm(String paymentReference) {
         this.paymentReference = paymentReference;
         this.status = DisbursementStatus.COMPLETED;

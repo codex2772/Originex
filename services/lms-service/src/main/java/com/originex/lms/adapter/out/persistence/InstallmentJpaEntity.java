@@ -1,5 +1,6 @@
 package com.originex.lms.adapter.out.persistence;
 
+import com.originex.common.money.Money;
 import com.originex.lms.domain.model.Installment;
 import jakarta.persistence.*;
 
@@ -64,6 +65,18 @@ public class InstallmentJpaEntity {
         e.status = inst.getStatus().name();
         e.paidDate = inst.getPaidDate();
         return e;
+    }
+
+    /**
+     * Rebuilds the domain installment. Money amounts are denominated in the
+     * owning loan's {@code currency} (installments carry no currency column).
+     */
+    public Installment toDomain(String currency) {
+        return Installment.reconstitute(
+                installmentId, installmentNumber, dueDate,
+                Money.of(principalDue, currency), Money.of(interestDue, currency), Money.of(totalDue, currency),
+                Money.of(principalPaid, currency), Money.of(interestPaid, currency),
+                Installment.InstallmentStatus.valueOf(status), paidDate);
     }
 
     protected InstallmentJpaEntity() {}

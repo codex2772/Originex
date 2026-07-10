@@ -347,6 +347,7 @@ public class Loan {
     public void setCurrency(String s) { this.currency = s; }
     public void setMaturityDate(LocalDate d) { this.maturityDate = d; }
     public void setNextDueDate(LocalDate d) { this.nextDueDate = d; }
+    public void setLastPaymentDate(LocalDate d) { this.lastPaymentDate = d; }
     public void setLastAccrualDate(LocalDate d) { this.lastAccrualDate = d; }
     public void setDpd(int i) { this.dpd = i; }
     public void setMaxDpd(int i) { this.maxDpd = i; }

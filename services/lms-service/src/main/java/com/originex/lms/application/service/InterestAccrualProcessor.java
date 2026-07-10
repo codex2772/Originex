@@ -49,7 +49,22 @@ public class InterestAccrualProcessor {
      * advances the marker so the loan isn't re-selected for the same day.
      */
     @Transactional
-    public void accrueOne(Loan loan, LocalDate asOf) {
+    public void accrueOne(Loan candidate, LocalDate asOf) {
+        // Re-load inside this transaction so the aggregate carries its child
+        // collections (schedule + disbursements). The eligibility query returns
+        // loans without children; saving such a loan would orphan-delete those
+        // rows. The re-read also re-checks last_accrual_date, so a loan already
+        // accrued by a concurrent run for the same day accrues zero here.
+        //
+        // The extra findById per loan is intentional: it lets us keep the shared
+        // detached-merge save() and its @Version optimistic-lock behavior exactly
+        // as-is, rather than introducing a separate scalar-only update path. The
+        // cost is one bounded read per accrued loan in a daily batch — an
+        // acceptable trade for not touching the concurrency-critical save path.
+        Loan loan = loanRepository.findById(candidate.getTenantId(), candidate.getLoanId()).orElse(null);
+        if (loan == null) {
+            return;
+        }
         Money accrued = InterestAccrualCalculator.accrualFor(loan, asOf);
 
         if (accrued.isPositive()) {

@@ -1,5 +1,6 @@
 package com.originex.lms.adapter.out.persistence;
 
+import com.originex.common.money.Money;
 import com.originex.lms.domain.model.Disbursement;
 import jakarta.persistence.*;
 
@@ -52,6 +53,16 @@ public class DisbursementJpaEntity {
         e.initiatedAt = d.getInitiatedAt();
         e.completedAt = d.getCompletedAt();
         return e;
+    }
+
+    /**
+     * Rebuilds the domain disbursement. The amount is denominated in the owning
+     * loan's {@code currency} (disbursements carry no currency column).
+     */
+    public Disbursement toDomain(String currency) {
+        return Disbursement.reconstitute(
+                disbursementId, Money.of(amount, currency), beneficiaryAccount, paymentReference,
+                Disbursement.DisbursementStatus.valueOf(status), initiatedAt, completedAt);
     }
 
     protected DisbursementJpaEntity() {}
