@@ -26,6 +26,7 @@
         <module>proto</module>
         <module>libs/common</module>
         <module>libs/spring-boot-starter</module>
+        <module>libs/test-support</module>
         <module>services/template-service</module>
         <module>services/customer-service</module>
         <module>services/los-service</module>
@@ -147,6 +148,11 @@
             <dependency>
                 <groupId>com.originex</groupId>
                 <artifactId>originex-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.originex</groupId>
+                <artifactId>originex-test-support</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
