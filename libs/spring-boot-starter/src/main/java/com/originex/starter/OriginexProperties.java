@@ -62,9 +62,49 @@ public class OriginexProperties {
          */
         private String sessionVariable = "app.tenant_id";
 
+        /**
+         * Explicit datasource blocks used only when {@code enabled=true}. The app
+         * block connects as the RLS-subject role; the system block as the
+         * BYPASSRLS role for cross-tenant jobs.
+         */
+        private Datasource datasource = new Datasource();
+
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
         public String getSessionVariable() { return sessionVariable; }
         public void setSessionVariable(String sessionVariable) { this.sessionVariable = sessionVariable; }
+        public Datasource getDatasource() { return datasource; }
+        public void setDatasource(Datasource datasource) { this.datasource = datasource; }
+    }
+
+    /** The {@code app} (RLS-subject) and {@code system} (BYPASSRLS) datasources. */
+    public static class Datasource {
+        private DataSourceConfig app = new DataSourceConfig();
+        private DataSourceConfig system = new DataSourceConfig();
+
+        public DataSourceConfig getApp() { return app; }
+        public void setApp(DataSourceConfig app) { this.app = app; }
+        public DataSourceConfig getSystem() { return system; }
+        public void setSystem(DataSourceConfig system) { this.system = system; }
+    }
+
+    /** Connection settings for one RLS datasource route. */
+    public static class DataSourceConfig {
+        private String url;
+        private String username;
+        private String password;
+        private int maximumPoolSize = 10;
+        private String poolName;
+
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+        public int getMaximumPoolSize() { return maximumPoolSize; }
+        public void setMaximumPoolSize(int maximumPoolSize) { this.maximumPoolSize = maximumPoolSize; }
+        public String getPoolName() { return poolName; }
+        public void setPoolName(String poolName) { this.poolName = poolName; }
     }
 }
