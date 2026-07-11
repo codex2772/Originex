@@ -1,6 +1,7 @@
 package com.originex.payment.application.service;
 
 import com.originex.common.money.Money;
+import com.originex.common.tenant.SystemContextHolder;
 import com.originex.payment.application.port.in.PaymentUseCase;
 import com.originex.payment.application.port.out.NachMandateRepository;
 import com.originex.payment.application.port.out.PaymentOrderRepository;
@@ -12,8 +13,10 @@ import com.originex.payment.domain.model.PaymentOrder.PaymentType;
 import com.originex.starter.outbox.OutboxPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -54,16 +57,25 @@ public class PaymentApplicationService implements PaymentUseCase {
     private final NachMandateRepository nachMandateRepository;
     private final Map<PaymentRail, PaymentRailPort> railAdapters;
     private final OutboxPublisher outboxPublisher;
+    /**
+     * Self-reference (Spring proxy) used only by {@link #retryFailedPaymentsJob()}
+     * to invoke the transactional {@link #retryFailedPayments()} through the proxy
+     * — a direct internal call would bypass the transaction advice. {@code @Lazy}
+     * breaks the self-referential construction cycle.
+     */
+    private final PaymentApplicationService self;
 
     public PaymentApplicationService(PaymentOrderRepository paymentOrderRepository,
                                      NachMandateRepository nachMandateRepository,
                                      List<PaymentRailPort> railPorts,
-                                     OutboxPublisher outboxPublisher) {
+                                     OutboxPublisher outboxPublisher,
+                                     @Lazy PaymentApplicationService self) {
         this.paymentOrderRepository = paymentOrderRepository;
         this.nachMandateRepository = nachMandateRepository;
         this.railAdapters = railPorts.stream()
                 .collect(Collectors.toMap(PaymentRailPort::rail, p -> p));
         this.outboxPublisher = outboxPublisher;
+        this.self = self;
     }
 
     @Override
@@ -224,10 +236,31 @@ public class PaymentApplicationService implements PaymentUseCase {
     }
 
     /**
-     * Retry scheduler — picks up RETRY_PENDING orders and resubmits.
+     * Retry scheduler entry point — picks up RETRY_PENDING orders and resubmits.
      * Runs every 5 minutes.
+     *
+     * <p>This is a cross-tenant sweep, so it must run on the BYPASSRLS (system)
+     * route when RLS is enabled. System context is entered here, *outside* the
+     * transactional boundary of {@link #retryFailedPayments()}, because the
+     * routing datasource picks its route when the transaction acquires its
+     * connection (see dev/RLS_DESIGN.md §5, §7.2). This method is therefore
+     * non-transactional ({@link Propagation#NOT_SUPPORTED}) and delegates through
+     * the Spring proxy ({@code self}) so {@code retryFailedPayments()} opens its
+     * transaction while system context is already set. {@code runAsSystem}
+     * guarantees the context is cleared in a finally block even if a retry throws.
      */
     @Scheduled(fixedDelayString = "${originex.payment.retry-interval-ms:300000}")
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void retryFailedPaymentsJob() {
+        SystemContextHolder.runAsSystem(self::retryFailedPayments);
+    }
+
+    /**
+     * Resubmits RETRY_PENDING orders in a single transaction. Invoked by
+     * {@link #retryFailedPaymentsJob()} within system context — never schedule or
+     * call this directly, or it will run on the RLS-subject route with no tenant
+     * bound.
+     */
     @Transactional
     public void retryFailedPayments() {
         List<PaymentOrder> pending = paymentOrderRepository.findPendingRetries(50);

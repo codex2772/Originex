@@ -1,5 +1,6 @@
 package com.originex.notification.application.service;
 
+import com.originex.common.tenant.SystemContextHolder;
 import com.originex.notification.application.port.out.NotificationChannelPort;
 import com.originex.notification.application.port.out.NotificationRepository;
 import com.originex.notification.application.port.out.NotificationTemplateRepository;
@@ -7,8 +8,10 @@ import com.originex.notification.domain.model.*;
 import com.originex.notification.domain.service.EventToNotificationMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -39,16 +42,25 @@ public class NotificationApplicationService {
     private final NotificationTemplateRepository templateRepository;
     private final Map<NotificationChannel, NotificationChannelPort> channelAdapters;
     private final EventToNotificationMapper eventMapper;
+    /**
+     * Self-reference (Spring proxy) used only by {@link #retryFailedJob()} to
+     * invoke the {@code @Transactional} {@link #retryFailed()} through the proxy —
+     * a direct internal call would bypass the transaction advice. {@code @Lazy}
+     * breaks the self-referential construction cycle.
+     */
+    private final NotificationApplicationService self;
 
     public NotificationApplicationService(NotificationRepository notificationRepository,
                                           NotificationTemplateRepository templateRepository,
                                           List<NotificationChannelPort> channelPorts,
-                                          EventToNotificationMapper eventMapper) {
+                                          EventToNotificationMapper eventMapper,
+                                          @Lazy NotificationApplicationService self) {
         this.notificationRepository = notificationRepository;
         this.templateRepository = templateRepository;
         this.channelAdapters = channelPorts.stream()
                 .collect(Collectors.toMap(NotificationChannelPort::channel, p -> p));
         this.eventMapper = eventMapper;
+        this.self = self;
     }
 
     /**
@@ -164,9 +176,29 @@ public class NotificationApplicationService {
     }
 
     /**
-     * Retry scheduler — retries failed notifications every 10 minutes.
+     * Retry scheduler entry point — retries failed notifications every 10 minutes.
+     *
+     * <p>This is a cross-tenant sweep, so it must run on the BYPASSRLS (system)
+     * route when RLS is enabled. System context is entered here, *outside* the
+     * {@code @Transactional} boundary of {@link #retryFailed()}, because the
+     * routing datasource picks its route when the transaction acquires its
+     * connection (see dev/RLS_DESIGN.md §5, §7.2). This method is therefore
+     * non-transactional ({@link Propagation#NOT_SUPPORTED}) and delegates through
+     * the Spring proxy ({@code self}) so {@code retryFailed()} opens its
+     * transaction while system context is already set. {@code runAsSystem}
+     * guarantees the context is cleared in a finally block even if the retry throws.
      */
     @Scheduled(fixedDelayString = "${originex.notification.retry-interval-ms:600000}")
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void retryFailedJob() {
+        SystemContextHolder.runAsSystem(self::retryFailed);
+    }
+
+    /**
+     * Retries failed notifications in a single transaction. Invoked by
+     * {@link #retryFailedJob()} within system context — never schedule or call
+     * this directly, or it will run on the RLS-subject route with no tenant bound.
+     */
     @Transactional
     public void retryFailed() {
         List<NotificationRequest> pending = notificationRepository.findPendingRetries(50);

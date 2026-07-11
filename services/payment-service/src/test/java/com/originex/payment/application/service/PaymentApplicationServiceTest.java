@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaymentApplicationServiceTest {
 
     private final PaymentApplicationService service =
-            new PaymentApplicationService(null, null, List.of(), null);
+            new PaymentApplicationService(null, null, List.of(), null, null);
 
     private PaymentRail selectRail(String preferred, String amount) {
         return service.selectRail(preferred, Money.of(amount, "INR"));

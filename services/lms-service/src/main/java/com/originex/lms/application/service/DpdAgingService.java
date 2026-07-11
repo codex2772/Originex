@@ -1,5 +1,6 @@
 package com.originex.lms.application.service;
 
+import com.originex.common.tenant.SystemContextHolder;
 import com.originex.lms.application.port.out.LoanRepository;
 import com.originex.lms.domain.model.Loan;
 import org.slf4j.Logger;
@@ -62,35 +63,45 @@ public class DpdAgingService {
 
     @Scheduled(cron = "${originex.lms.dpd.cron:0 0 1 * * *}", zone = "${originex.lms.dpd.zone:Asia/Kolkata}")
     public void runDailyAging() {
-        LocalDate asOf = LocalDate.now(zone);
-        log.info("DPD aging run starting: asOf={}", asOf);
+        // Cross-tenant sweep: run the whole eligibility scan + per-loan processing
+        // in system context so — when RLS is enabled — the routing datasource
+        // acquires the BYPASSRLS (system-route) connection and the scan sees loans
+        // across all tenants. System context is entered here, *outside* the
+        // per-loan @Transactional boundary (DpdAgingProcessor), so the route is
+        // chosen when each transaction acquires its connection. runAsSystem
+        // guarantees the context is cleared in a finally block, even if the scan or
+        // a loan throws. See dev/RLS_DESIGN.md §5, §7.2.
+        SystemContextHolder.runAsSystem(() -> {
+            LocalDate asOf = LocalDate.now(zone);
+            log.info("DPD aging run starting: asOf={}", asOf);
 
-        UUID cursor = null;
-        int processed = 0;
-        int skipped = 0;
+            UUID cursor = null;
+            int processed = 0;
+            int skipped = 0;
 
-        while (true) {
-            List<Loan> batch = loanRepository.findDelinquent(asOf, cursor, batchSize);
-            if (batch.isEmpty()) {
-                break;
-            }
-            for (Loan loan : batch) {
-                try {
-                    processor.ageOne(loan, asOf);
-                    processed++;
-                } catch (OptimisticLockingFailureException e) {
-                    // Another instance aged this loan concurrently — benign.
-                    skipped++;
-                    log.debug("DPD aging skipped (concurrent update): loanId={}", loan.getLoanId());
-                } catch (RuntimeException e) {
-                    // Isolate one loan's failure; it stays eligible and is retried next run.
-                    skipped++;
-                    log.error("DPD aging failed for loanId={} (will retry next run): {}",
-                            loan.getLoanId(), e.getMessage());
+            while (true) {
+                List<Loan> batch = loanRepository.findDelinquent(asOf, cursor, batchSize);
+                if (batch.isEmpty()) {
+                    break;
                 }
-                cursor = loan.getLoanId();
+                for (Loan loan : batch) {
+                    try {
+                        processor.ageOne(loan, asOf);
+                        processed++;
+                    } catch (OptimisticLockingFailureException e) {
+                        // Another instance aged this loan concurrently — benign.
+                        skipped++;
+                        log.debug("DPD aging skipped (concurrent update): loanId={}", loan.getLoanId());
+                    } catch (RuntimeException e) {
+                        // Isolate one loan's failure; it stays eligible and is retried next run.
+                        skipped++;
+                        log.error("DPD aging failed for loanId={} (will retry next run): {}",
+                                loan.getLoanId(), e.getMessage());
+                    }
+                    cursor = loan.getLoanId();
+                }
             }
-        }
-        log.info("DPD aging run complete: asOf={}, processed={}, skipped={}", asOf, processed, skipped);
+            log.info("DPD aging run complete: asOf={}, processed={}, skipped={}", asOf, processed, skipped);
+        });
     }
 }
