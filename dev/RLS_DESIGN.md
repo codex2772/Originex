@@ -156,6 +156,16 @@ A Spring `AbstractRoutingDataSource` with two targets, keyed by a `SystemContext
 
 **Rejected alternative:** two explicitly-wired DataSources/EntityManagers — forces separate repository wiring per route and complicates transactions. Routing keeps it transparent.
 
+### 7.3 Routing failure behavior (fail loud — never silently mask)
+The routing layer is designed so a misconfiguration or an unexpected routing state fails clearly at the earliest point, rather than degrading to a state that quietly weakens or breaks tenant isolation. Configuration is explicit: `originex.rls.datasource.app` and `originex.rls.datasource.system` are separate blocks.
+
+1. **Missing/incomplete datasource config → fail fast at startup.** When `rls.enabled=true`, each of the `app` and `system` blocks must supply at least `url` and `username`. If either is absent or blank, the routing datasource bean throws `IllegalStateException` naming the exact missing property (e.g. `originex.rls.datasource.system.url`) and the service **fails to boot**. It never silently falls back to a single datasource (which would defeat isolation) or to Boot's autoconfigured datasource.
+2. **Unresolvable routing key → throw, don't fall back.** Both `APP` and `SYSTEM` keys are mapped and `lenientFallback` is set to `false`, so any *unexpected* (future-bug) key raises `IllegalStateException` instead of silently routing to the default. The key is derived from a boolean (`SystemContextHolder`), so it is never null in practice; a hypothetical null key uses the `app` default (the fail-closed direction).
+3. **No silent role downgrade.** `app` and `system` are distinct connections/pools; there is no code path that falls back from one role to the other on error. A broken `system` pool surfaces as a connection error, not a silent RLS-filtered (empty) result that could be mistaken for "no data".
+4. **Visibility.** Selection of the `SYSTEM` (BYPASSRLS) route is logged at `TRACE`, so an unexpected system-route on a request thread — the one state that could weaken isolation — is diagnosable when debugging.
+
+The net effect: a configuration error (missing role/creds) stops the service at boot with a precise message; a routing-logic bug throws rather than masking; and the only "quiet" fallback that remains (null key → `app`) errs toward *more* RLS filtering, never less.
+
 ---
 
 ## 8. PostgreSQL role model (keep three roles)
