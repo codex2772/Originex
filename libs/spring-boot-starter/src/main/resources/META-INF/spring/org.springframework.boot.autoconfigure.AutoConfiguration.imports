@@ -1,3 +1,4 @@
 com.originex.starter.OriginexAutoConfiguration
 com.originex.starter.outbox.OutboxAutoConfiguration
 com.originex.starter.rls.RlsAutoConfiguration
+com.originex.starter.rls.RlsKafkaAutoConfiguration
