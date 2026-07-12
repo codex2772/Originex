@@ -1,6 +1,9 @@
 package com.originex.starter.security;
 
 import com.originex.starter.OriginexProperties;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -62,31 +65,50 @@ public class SecurityAutoConfiguration {
     private static final String PREFIX = "originex.security";
 
     /**
-     * Resource-server chain: authenticate every request (except health) using the
-     * bearer JWT, then derive tenant/subject context from the verified claims via
-     * {@link TenantClaimResolutionFilter} (added immediately after the bearer-token
-     * authentication filter, so it runs post-validation and pre-controller). Active
-     * only when security is explicitly enabled. Authorization rules ({@code @PreAuthorize},
-     * scope/role checks) are added in a later commit; this chain enforces
-     * authentication only.
+     * Resource-server chain: validate the bearer JWT and derive tenant/subject
+     * context from the verified claims via {@link TenantClaimResolutionFilter}
+     * (added immediately after the bearer-token authentication filter). Active only
+     * when security is enabled. The authorization <i>posture</i> depends on the
+     * mode: {@code ENFORCED} requires authentication; {@code PERMISSIVE} permits
+     * unauthenticated requests (which may fall back to the tenant header) while
+     * still validating any token that is present. Authorization rules
+     * ({@code @PreAuthorize}, scope/role checks) are added in a later commit.
      */
     @Bean
     @ConditionalOnProperty(prefix = PREFIX, name = ENABLED, havingValue = "true")
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     public SecurityFilterChain originexResourceServerFilterChain(HttpSecurity http,
-                                                                 JwtDecoder jwtDecoder) throws Exception {
+                                                                 JwtDecoder jwtDecoder,
+                                                                 OriginexProperties properties,
+                                                                 ObjectProvider<MeterRegistry> meterRegistry)
+            throws Exception {
+        OriginexProperties.SecurityProperties security = properties.getSecurity();
+        AuthMode mode = security.getMode();
+        MeterRegistry registry = meterRegistry.getIfAvailable(SimpleMeterRegistry::new);
+
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        // Only liveness/readiness is public; other actuator endpoints
-                        // require authentication (dev/AUTH_DESIGN.md §11).
-                        .requestMatchers("/actuator/health/**").permitAll()
-                        .anyRequest().authenticated())
+                .authorizeHttpRequests(auth -> {
+                    // Only liveness/readiness is public (dev/AUTH_DESIGN.md §11).
+                    auth.requestMatchers("/actuator/health/**").permitAll();
+                    if (mode == AuthMode.ENFORCED) {
+                        auth.anyRequest().authenticated();
+                    } else {
+                        // PERMISSIVE: do not reject unauthenticated requests; a present
+                        // token is still validated by the resource server below.
+                        auth.anyRequest().permitAll();
+                    }
+                })
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
                         .decoder(jwtDecoder)
                         .jwtAuthenticationConverter(new OriginexJwtAuthenticationConverter())))
-                .addFilterAfter(new TenantClaimResolutionFilter(), BearerTokenAuthenticationFilter.class);
+                .addFilterAfter(new TenantClaimResolutionFilter(
+                                mode,
+                                properties.getTenant().getHeaderName(),
+                                security.getPermissive().getTrustedFallbackCidrs(),
+                                registry),
+                        BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

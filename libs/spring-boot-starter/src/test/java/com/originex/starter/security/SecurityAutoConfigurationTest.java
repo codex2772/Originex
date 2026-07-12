@@ -56,5 +56,8 @@ class SecurityAutoConfigurationTest {
         assertThat(props.getIssuerUri()).isNull();
         assertThat(props.getJwkSetUri()).isNull();
         assertThat(props.getAudience()).isNull();
+        // Fail-secure default posture, and a fail-closed (empty) fallback allowlist.
+        assertThat(props.getMode()).isEqualTo(AuthMode.ENFORCED);
+        assertThat(props.getPermissive().getTrustedFallbackCidrs()).isEmpty();
     }
 }

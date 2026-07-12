@@ -128,6 +128,15 @@ public class OriginexProperties {
         private String issuerUri;
         private String jwkSetUri;
         private String audience;
+        /**
+         * Authentication posture when {@code enabled=true}. Defaults to
+         * {@code ENFORCED} (fail-secure): enabling security without an explicit mode
+         * requires authentication. Operators set {@code PERMISSIVE} deliberately for
+         * the bounded migration observe window (see dev/AUTH_DESIGN.md §8.2).
+         */
+        private com.originex.starter.security.AuthMode mode =
+                com.originex.starter.security.AuthMode.ENFORCED;
+        private Permissive permissive = new Permissive();
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -137,5 +146,29 @@ public class OriginexProperties {
         public void setJwkSetUri(String jwkSetUri) { this.jwkSetUri = jwkSetUri; }
         public String getAudience() { return audience; }
         public void setAudience(String audience) { this.audience = audience; }
+        public com.originex.starter.security.AuthMode getMode() { return mode; }
+        public void setMode(com.originex.starter.security.AuthMode mode) { this.mode = mode; }
+        public Permissive getPermissive() { return permissive; }
+        public void setPermissive(Permissive permissive) { this.permissive = permissive; }
+    }
+
+    /**
+     * Settings that apply only in {@code PERMISSIVE} mode during the migration
+     * window (see dev/AUTH_DESIGN.md §8.2).
+     */
+    public static class Permissive {
+        /**
+         * Source networks (CIDR, e.g. {@code 10.0.0.0/8}) from which the legacy
+         * {@code X-Tenant-Id} header fallback is honoured when no token is present.
+         * Empty (the default) means the fallback is never applied — the network
+         * restriction is fail-closed, so PERMISSIVE without an explicit allowlist
+         * behaves like require-auth for the tenant source.
+         */
+        private java.util.List<String> trustedFallbackCidrs = new java.util.ArrayList<>();
+
+        public java.util.List<String> getTrustedFallbackCidrs() { return trustedFallbackCidrs; }
+        public void setTrustedFallbackCidrs(java.util.List<String> trustedFallbackCidrs) {
+            this.trustedFallbackCidrs = trustedFallbackCidrs;
+        }
     }
 }
