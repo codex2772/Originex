@@ -52,6 +52,18 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- OAuth2 resource server (see dev/AUTH_DESIGN.md). Optional like the
+             other Spring Boot starters above: it is on the starter's own compile
+             classpath so the (gated, default-off) SecurityAutoConfiguration
+             compiles, but it is NOT propagated to services transitively. A service
+             therefore has zero classpath/behaviour change until it explicitly opts
+             in by adding this dependency during its auth rollout. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Kafka -->
         <dependency>
             <groupId>org.springframework.kafka</groupId>

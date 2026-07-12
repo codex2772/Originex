@@ -12,6 +12,7 @@ public class OriginexProperties {
     private TenantProperties tenant = new TenantProperties();
     private KafkaProperties kafka = new KafkaProperties();
     private RlsProperties rls = new RlsProperties();
+    private SecurityProperties security = new SecurityProperties();
 
     public TenantProperties getTenant() { return tenant; }
     public void setTenant(TenantProperties tenant) { this.tenant = tenant; }
@@ -19,6 +20,8 @@ public class OriginexProperties {
     public void setKafka(KafkaProperties kafka) { this.kafka = kafka; }
     public RlsProperties getRls() { return rls; }
     public void setRls(RlsProperties rls) { this.rls = rls; }
+    public SecurityProperties getSecurity() { return security; }
+    public void setSecurity(SecurityProperties security) { this.security = security; }
 
     public static class TenantProperties {
         private String headerName = "X-Tenant-Id";
@@ -106,5 +109,33 @@ public class OriginexProperties {
         public void setMaximumPoolSize(int maximumPoolSize) { this.maximumPoolSize = maximumPoolSize; }
         public String getPoolName() { return poolName; }
         public void setPoolName(String poolName) { this.poolName = poolName; }
+    }
+
+    /**
+     * OAuth2 resource-server / authentication settings (see {@code dev/AUTH_DESIGN.md}).
+     * Master switch is {@code enabled}; it defaults to {@code false} so the
+     * security machinery is inert (no beans, no filter chain contributed) until a
+     * service explicitly opts in during the phased rollout. When disabled, behaviour
+     * is unchanged from today's header-based tenant resolution.
+     *
+     * <p>{@code issuerUri} (OIDC issuer, e.g. the Keycloak realm URL) or
+     * {@code jwkSetUri} identifies the token signer; {@code audience}, when set, is
+     * the expected {@code aud} claim for this service (per-service audience, so a
+     * token minted for another service is not accepted here).
+     */
+    public static class SecurityProperties {
+        private boolean enabled = false;
+        private String issuerUri;
+        private String jwkSetUri;
+        private String audience;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getIssuerUri() { return issuerUri; }
+        public void setIssuerUri(String issuerUri) { this.issuerUri = issuerUri; }
+        public String getJwkSetUri() { return jwkSetUri; }
+        public void setJwkSetUri(String jwkSetUri) { this.jwkSetUri = jwkSetUri; }
+        public String getAudience() { return audience; }
+        public void setAudience(String audience) { this.audience = audience; }
     }
 }
