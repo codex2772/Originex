@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.util.StringUtils;
 
@@ -62,7 +63,12 @@ public class SecurityAutoConfiguration {
 
     /**
      * Resource-server chain: authenticate every request (except health) using the
-     * bearer JWT. Active only when RLS-style security is explicitly enabled.
+     * bearer JWT, then derive tenant/subject context from the verified claims via
+     * {@link TenantClaimResolutionFilter} (added immediately after the bearer-token
+     * authentication filter, so it runs post-validation and pre-controller). Active
+     * only when security is explicitly enabled. Authorization rules ({@code @PreAuthorize},
+     * scope/role checks) are added in a later commit; this chain enforces
+     * authentication only.
      */
     @Bean
     @ConditionalOnProperty(prefix = PREFIX, name = ENABLED, havingValue = "true")
@@ -77,7 +83,10 @@ public class SecurityAutoConfiguration {
                         // require authentication (dev/AUTH_DESIGN.md §11).
                         .requestMatchers("/actuator/health/**").permitAll()
                         .anyRequest().authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)));
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
+                        .decoder(jwtDecoder)
+                        .jwtAuthenticationConverter(new OriginexJwtAuthenticationConverter())))
+                .addFilterAfter(new TenantClaimResolutionFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 
