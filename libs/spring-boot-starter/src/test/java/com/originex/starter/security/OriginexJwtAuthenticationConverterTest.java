@@ -6,6 +6,9 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.util.List;
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -49,5 +52,21 @@ class OriginexJwtAuthenticationConverterTest {
         assertThat(auth.getName()).isEqualTo("svc-los");
         assertThat(auth.getAuthorities()).extracting(GrantedAuthority::getAuthority)
                 .containsExactly("SCOPE_customers:read");
+    }
+
+    @Test
+    @DisplayName("maps both scopes (SCOPE_) and realm roles (ROLE_) into authorities")
+    void mapsScopesAndRealmRoles() {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "RS256")
+                .subject("user-1")
+                .claim("scope", "loans:read")
+                .claim("realm_access", Map.of("roles", List.of("UNDERWRITER", "OPERATIONS")))
+                .build();
+
+        AbstractAuthenticationToken auth = converter.convert(jwt);
+
+        assertThat(auth.getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .containsExactlyInAnyOrder("SCOPE_loans:read", "ROLE_UNDERWRITER", "ROLE_OPERATIONS");
     }
 }

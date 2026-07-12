@@ -22,6 +22,8 @@ import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -171,5 +173,21 @@ public class SecurityAutoConfiguration {
         return jwt -> jwt.getAudience() != null && jwt.getAudience().contains(audience)
                 ? OAuth2TokenValidatorResult.success()
                 : OAuth2TokenValidatorResult.failure(error);
+    }
+
+    /**
+     * Enables {@code @PreAuthorize}/{@code @PostAuthorize} method security so the
+     * RBAC checks on the use-case ports are enforced — but only when security is
+     * enabled, so with {@code originex.security.enabled=false} method security is
+     * not contributed and behaviour is unchanged. A method without an explicit
+     * check is not authorized by this mechanism (opt-in); the platform-wide
+     * deny-by-default guarantee is completed by the HTTP {@code authenticated()}
+     * posture and the per-service ArchUnit check added when {@code @PreAuthorize}
+     * is applied.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnProperty(prefix = PREFIX, name = ENABLED, havingValue = "true")
+    @EnableMethodSecurity
+    static class OriginexMethodSecurityConfiguration {
     }
 }
