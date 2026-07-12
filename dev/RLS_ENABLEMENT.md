@@ -81,3 +81,33 @@ SELECT current_setting('app.tenant_id', true);   -- non-null inside a request tx
 If reads unexpectedly return zero rows after enabling, the usual cause is the
 connecting role or an unset `app.tenant_id` — see the troubleshooting flow in
 `dev/RLS_DESIGN.md`.
+
+## Verifying isolation in CI (role-aware integration tests)
+
+RLS isolation is proven by integration tests that connect as `originex_app`
+(not the container superuser, which would bypass RLS). The shared harness lives
+in `libs/test-support` (`RlsPostgresSupport` + `rls/test-roles.sql`): it starts a
+Postgres Testcontainer whose init script provisions the three roles with the
+same names/passwords the `rls` profile defaults to, then exposes per-role
+datasources and `migrateAsOwner(...)`.
+
+Two layers, both tagged `@Tag("rls")`:
+
+| Layer | Example | Proves |
+|---|---|---|
+| DB semantics | `CustomerRlsSemanticsIntegrationTest` | isolation, `WITH CHECK`, fail-closed, system-role bypass — asserted directly via per-role datasources |
+| App wiring | `CustomerHttpRlsIsolationIntegrationTest`, `LmsRlsConsumerAndSchedulerIntegrationTest` | HTTP filter, Kafka `RecordInterceptor`, and `runAsSystem` scheduler set `app.tenant_id` end-to-end |
+
+They are named `*IntegrationTest`, so they run under the existing failsafe
+profile and stay out of the unit (`surefire`) build. Run just the RLS suite with
+the tag:
+
+```bash
+mvn verify -Pintegration-test -Dgroups=rls          # RLS isolation tests only
+mvn verify -Pintegration-test                        # all integration tests
+```
+
+Requires Docker (Testcontainers pulls `postgres:16-alpine` and, for LMS,
+`confluentinc/cp-kafka`). Adding coverage for another service is a matter of a
+test-scope dependency on `originex-test-support` plus a `@Tag("rls")` test built
+from `RlsPostgresSupport`.
