@@ -10,8 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@link OriginexJwtAuthenticationConverter} maps OAuth2 scopes to {@code SCOPE_*}
- * authorities and uses the token {@code sub} as the principal name. Role→authority
- * mapping and authorization are deliberately out of scope for this commit.
+ * authorities and derives the principal name from the token — the {@code sub} for
+ * human principals, or the client id for service accounts. Role→authority mapping
+ * and authorization are deliberately out of scope for this commit.
  */
 @DisplayName("OriginexJwtAuthenticationConverter")
 class OriginexJwtAuthenticationConverterTest {
@@ -32,5 +33,21 @@ class OriginexJwtAuthenticationConverterTest {
         assertThat(auth.getName()).isEqualTo("user-1");
         assertThat(auth.getAuthorities()).extracting(GrantedAuthority::getAuthority)
                 .containsExactlyInAnyOrder("SCOPE_loans:read", "SCOPE_loans:disburse");
+    }
+
+    @Test
+    @DisplayName("service-account token (no sub): principal name is the client id")
+    void serviceAccountUsesClientIdAsPrincipal() {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "RS256")
+                .claim("azp", "svc-los")
+                .claim("scope", "customers:read")
+                .build();
+
+        AbstractAuthenticationToken auth = converter.convert(jwt);
+
+        assertThat(auth.getName()).isEqualTo("svc-los");
+        assertThat(auth.getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .containsExactly("SCOPE_customers:read");
     }
 }

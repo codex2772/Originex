@@ -1,5 +1,6 @@
 package com.originex.starter.security;
 
+import com.originex.common.security.SubjectContext;
 import com.originex.common.security.SubjectContextHolder;
 import com.originex.common.tenant.TenantContextHolder;
 import jakarta.servlet.FilterChain;
@@ -19,8 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit tests for {@link TenantClaimResolutionFilter}: it must populate tenant and
- * subject context from verified JWT claims, reject tokens whose business claims are
+ * Unit tests for {@link TenantClaimResolutionFilter}: it must classify the
+ * principal (human / customer / service account), populate tenant and subject
+ * context from verified JWT claims, reject tokens whose business claims are
  * missing/malformed, and always clear both contexts afterward (success and
  * exception paths) so a pooled virtual thread never leaks identity.
  */
@@ -47,26 +49,42 @@ class TenantClaimResolutionFilterTest {
     }
 
     @Test
-    @DisplayName("valid JWT: tenant and subject context are populated for the request")
-    void validJwtPopulatesContexts() throws Exception {
+    @DisplayName("valid customer JWT: tenant + CUSTOMER subject context are populated")
+    void validCustomerJwtPopulatesContexts() throws Exception {
         authenticate(jwt().subject("user-1").claim("tenant_id", TENANT).claim("customer_id", "cust-9").build());
 
         AtomicReference<String> tenantDuring = new AtomicReference<>();
-        AtomicReference<String> subjectDuring = new AtomicReference<>();
-        AtomicReference<String> customerDuring = new AtomicReference<>();
+        AtomicReference<SubjectContext> subjectDuring = new AtomicReference<>();
         FilterChain chain = (rq, rs) -> {
             tenantDuring.set(TenantContextHolder.get().tenantId());
-            subjectDuring.set(SubjectContextHolder.get().subject());
-            customerDuring.set(SubjectContextHolder.get().customerId());
+            subjectDuring.set(SubjectContextHolder.get());
         };
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(new MockHttpServletRequest(), response, chain);
 
         assertThat(tenantDuring).hasValue(TENANT);
-        assertThat(subjectDuring).hasValue("user-1");
-        assertThat(customerDuring).hasValue("cust-9");
+        assertThat(subjectDuring.get().type()).isEqualTo(SubjectContext.PrincipalType.CUSTOMER);
+        assertThat(subjectDuring.get().subject()).isEqualTo("user-1");
+        assertThat(subjectDuring.get().customerId()).isEqualTo("cust-9");
         assertThat(response.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("service-account JWT (client id, no sub): classified as SERVICE_ACCOUNT")
+    void serviceAccountJwtClassifiedAsMachine() throws Exception {
+        authenticate(jwt().claim("azp", "svc-los").claim("tenant_id", TENANT).build());
+
+        AtomicReference<SubjectContext> subjectDuring = new AtomicReference<>();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(new MockHttpServletRequest(), response,
+                (rq, rs) -> subjectDuring.set(SubjectContextHolder.get()));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(subjectDuring.get().type()).isEqualTo(SubjectContext.PrincipalType.SERVICE_ACCOUNT);
+        assertThat(subjectDuring.get().subject()).isEqualTo("svc-los");
+        assertThat(subjectDuring.get().isMachine()).isTrue();
     }
 
     @Test
@@ -99,9 +117,9 @@ class TenantClaimResolutionFilterTest {
     }
 
     @Test
-    @DisplayName("missing subject: rejected 403, chain not invoked")
-    void missingSubjectRejected() throws Exception {
-        authenticate(jwt().claim("tenant_id", TENANT).build()); // no 'sub'
+    @DisplayName("no usable identity (no sub, no client id): rejected 403, chain not invoked")
+    void tokenWithNoIdentityRejected() throws Exception {
+        authenticate(jwt().claim("tenant_id", TENANT).build()); // no 'sub', no 'azp'/'client_id'
         boolean[] chainCalled = {false};
         MockHttpServletResponse response = new MockHttpServletResponse();
 
@@ -119,6 +137,7 @@ class TenantClaimResolutionFilterTest {
 
         filter.doFilter(new MockHttpServletRequest(), new MockHttpServletResponse(), (rq, rs) -> {
             assertThat(TenantContextHolder.get()).isNotNull(); // set during
+            assertThat(SubjectContextHolder.get().type()).isEqualTo(SubjectContext.PrincipalType.HUMAN_USER);
         });
 
         assertThat(TenantContextHolder.get()).as("cleared after success").isNull();

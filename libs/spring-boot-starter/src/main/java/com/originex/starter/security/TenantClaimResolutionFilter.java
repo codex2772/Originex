@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -29,12 +30,13 @@ import java.util.UUID;
  * It replaces trust in {@code X-Tenant-Id} for authenticated requests: the tenant
  * comes from the token, not a client header.
  *
- * <p>Business-claim validation (this is not authorization — no roles/scopes are
- * checked here):
+ * <p>The principal (human user / customer / service account) is classified by
+ * {@link JwtPrincipalResolver}. Business-claim validation (this is not
+ * authorization — no roles/scopes are checked here):
  * <ul>
- *   <li>no {@code sub} → 403 (authenticated identity is incomplete);</li>
+ *   <li>no usable identity (no {@code sub} and no {@code azp}/{@code client_id}) → 403;</li>
  *   <li>no {@code tenant_id} → 403 (cannot establish a tenant; platform/cross-tenant
- *       principals are handled by a later commit);</li>
+ *       and tenantless-system-service principals are handled by a later commit);</li>
  *   <li>malformed {@code tenant_id} (not a UUID) → 400.</li>
  * </ul>
  *
@@ -46,8 +48,6 @@ public class TenantClaimResolutionFilter extends OncePerRequestFilter {
 
     /** Claim carrying the tenant id (UUID). Matches the Kafka {@code tenant_id} header. */
     static final String TENANT_CLAIM = "tenant_id";
-    /** Claim binding a borrower principal to its customer record (ownership layer). */
-    static final String CUSTOMER_CLAIM = "customer_id";
 
     private static final String MDC_TENANT = "tenantId";
     private static final String MDC_SUBJECT = "sub";
@@ -66,15 +66,15 @@ public class TenantClaimResolutionFilter extends OncePerRequestFilter {
         }
 
         Jwt jwt = jwtAuth.getToken();
-        String subject = jwt.getSubject();
-        String tenantId = jwt.getClaimAsString(TENANT_CLAIM);
-        String customerId = jwt.getClaimAsString(CUSTOMER_CLAIM);
 
-        if (subject == null || subject.isBlank()) {
-            reject(response, HttpServletResponse.SC_FORBIDDEN, "invalid-subject",
-                    "Token has no subject");
+        Optional<SubjectContext> principal = JwtPrincipalResolver.resolve(jwt);
+        if (principal.isEmpty()) {
+            reject(response, HttpServletResponse.SC_FORBIDDEN, "unresolvable-principal",
+                    "Token carries no subject or client identity");
             return;
         }
+
+        String tenantId = jwt.getClaimAsString(TENANT_CLAIM);
         if (tenantId == null || tenantId.isBlank()) {
             reject(response, HttpServletResponse.SC_FORBIDDEN, "missing-tenant",
                     "Token is missing the required '" + TENANT_CLAIM + "' claim");
@@ -88,11 +88,12 @@ public class TenantClaimResolutionFilter extends OncePerRequestFilter {
             return;
         }
 
+        SubjectContext subject = principal.get();
         try {
             TenantContextHolder.set(TenantContext.of(tenantId, tenantId));
-            SubjectContextHolder.set(SubjectContext.of(subject, customerId));
+            SubjectContextHolder.set(subject);
             MDC.put(MDC_TENANT, tenantId);
-            MDC.put(MDC_SUBJECT, subject);
+            MDC.put(MDC_SUBJECT, subject.subject());
 
             filterChain.doFilter(request, response);
         } finally {
