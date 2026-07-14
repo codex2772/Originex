@@ -22,14 +22,16 @@ public class NotificationTemplate {
     private Instant updatedAt;
 
     /**
-     * Render the template by substituting {{variable}} placeholders.
+     * Render the template by substituting {{variable}} placeholders. A variable
+     * that is not supplied is rendered as empty — a missing value never leaks a
+     * raw {{placeholder}} into a customer-facing message.
      */
     public String renderBody(java.util.Map<String, String> variables) {
         String rendered = this.body;
         for (var entry : variables.entrySet()) {
             rendered = rendered.replace("{{" + entry.getKey() + "}}", entry.getValue() != null ? entry.getValue() : "");
         }
-        return rendered;
+        return stripUnresolved(rendered);
     }
 
     public String renderSubject(java.util.Map<String, String> variables) {
@@ -38,7 +40,12 @@ public class NotificationTemplate {
         for (var entry : variables.entrySet()) {
             rendered = rendered.replace("{{" + entry.getKey() + "}}", entry.getValue() != null ? entry.getValue() : "");
         }
-        return rendered;
+        return stripUnresolved(rendered);
+    }
+
+    /** Blank any {{placeholder}} left unresolved because its variable was not supplied. */
+    private static String stripUnresolved(String rendered) {
+        return rendered == null ? null : rendered.replaceAll("\\{\\{[^{}]*\\}\\}", "");
     }
 
     // Accessors
