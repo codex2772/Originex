@@ -1,0 +1,35 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Local Keycloak dev IdP for the Originex platform (Phase 1 — Security Foundation).
+#
+# Imports realm-export.json (realm "originex") on startup, so services can
+# validate JWTs against it and developers can mint tokens. Dev-only: HTTP,
+# in-memory H2, throwaway admin creds — never a production configuration.
+#
+#   docker compose -f infra/keycloak/docker-compose.yml up
+#
+# Then point a service at it:
+#   originex.security.enabled=true
+#   originex.security.issuer-uri=http://localhost:8180/realms/originex
+#
+# See README.md for token-minting examples.
+# ═══════════════════════════════════════════════════════════════════════════
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: originex-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      # Host 8180 -> container 8080. 8180 avoids colliding with services on 808x.
+      - "8180:8080"
+    volumes:
+      # Realm JSON is imported from /opt/keycloak/data/import at startup.
+      - ./realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/originex/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30

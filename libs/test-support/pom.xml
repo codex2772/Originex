@@ -33,5 +33,25 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
         </dependency>
+
+        <!-- GenericContainer for the Keycloak dev-IdP harness (KeycloakSupport).
+             No extra third-party wrapper: uses Testcontainers core directly.
+             Version managed by the Testcontainers BOM in the root pom. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+        </dependency>
+        <!-- Parse token/JWT JSON in KeycloakSupport and validate the realm export. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- This module's own tests (realm-export sanity + Keycloak container IT). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
