@@ -35,6 +35,19 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!--
+          OAuth2 resource server — the OPT-IN that activates the platform's JWT
+          authentication (dev/AUTH_DESIGN.md §3). It is declared <optional> in the
+          starter, so it is NOT transitive; a service must add it explicitly. This
+          brings Spring Security onto the classpath, but behaviour stays unchanged
+          while originex.security.enabled=false: the starter's disabled permit-all
+          SecurityFilterChain engages, which makes Spring Boot's default lock-down
+          back off (verified by SecurityOptInVerificationTest).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
