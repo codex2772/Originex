@@ -81,7 +81,7 @@
       "serviceAccountsEnabled": false,
       "redirectUris": ["*"],
       "webOrigins": ["*"],
-      "defaultClientScopes": ["originex-tenant", "roles", "profile", "email"],
+      "defaultClientScopes": ["basic", "originex-tenant", "roles", "profile", "email"],
       "optionalClientScopes": ["customers:read", "customers:write"]
     },
     {
@@ -93,7 +93,7 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "defaultClientScopes": ["roles"],
+      "defaultClientScopes": ["basic", "roles"],
       "optionalClientScopes": ["customers:read", "customers:write"]
     }
   ],

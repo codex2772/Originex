@@ -14,6 +14,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code scope}, realm roles). <b>Requires Docker</b> (pulls the Keycloak image),
  * so it is named {@code *IntegrationTest} and tagged {@code keycloak}: it runs under
  * {@code mvn verify -Pintegration-test} in CI, not the unit build.
+ *
+ * <p>Assertions read claims via {@link JsonNode#path} (never null) and attach the
+ * full decoded claim set as the failure description, so a missing claim surfaces
+ * the actual token contents in the CI log rather than a bare {@code NullPointerException}.
  */
 @Tag("keycloak")
 @DisplayName("KeycloakSupport (Testcontainers)")
@@ -32,11 +36,16 @@ class KeycloakSupportIntegrationTest {
                     keycloak, "originex-web", "customer-alice", "password", "openid", "customers:read");
 
             JsonNode claims = KeycloakSupport.decodeClaims(token);
-            assertThat(claims.get("sub").asText()).isNotBlank();
-            assertThat(claims.get("tenant_id").asText()).isEqualTo(TENANT_A);
-            assertThat(claims.get("customer_id").asText()).isEqualTo(ALICE_CUSTOMER_ID);
-            assertThat(claims.get("scope").asText()).contains("customers:read");
-            assertThat(claims.path("realm_access").path("roles").toString()).contains("CUSTOMER");
+            assertThat(claims.path("sub").asText(null))
+                    .as("token claims=%s", claims).isNotBlank();
+            assertThat(claims.path("tenant_id").asText(null))
+                    .as("token claims=%s", claims).isEqualTo(TENANT_A);
+            assertThat(claims.path("customer_id").asText(null))
+                    .as("token claims=%s", claims).isEqualTo(ALICE_CUSTOMER_ID);
+            assertThat(claims.path("scope").asText(""))
+                    .as("token claims=%s", claims).contains("customers:read");
+            assertThat(claims.path("realm_access").path("roles").toString())
+                    .as("token claims=%s", claims).contains("CUSTOMER");
         }
     }
 
@@ -50,8 +59,10 @@ class KeycloakSupportIntegrationTest {
                     keycloak, "svc-customer", "svc-customer-secret", "customers:read");
 
             JsonNode claims = KeycloakSupport.decodeClaims(token);
-            assertThat(claims.get("azp").asText()).isEqualTo("svc-customer");
-            assertThat(claims.get("scope").asText()).contains("customers:read");
+            assertThat(claims.path("azp").asText(null))
+                    .as("token claims=%s", claims).isEqualTo("svc-customer");
+            assertThat(claims.path("scope").asText(""))
+                    .as("token claims=%s", claims).contains("customers:read");
         }
     }
 }
