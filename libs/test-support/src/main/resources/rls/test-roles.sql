@@ -18,6 +18,15 @@ CREATE ROLE originex_owner  WITH LOGIN PASSWORD 'originex_owner_local'  NOSUPERU
 CREATE ROLE originex_system WITH LOGIN PASSWORD 'originex_system_local' NOSUPERUSER BYPASSRLS;
 CREATE ROLE originex_app    WITH LOGIN PASSWORD 'originex_app_local'    NOSUPERUSER NOBYPASSRLS;
 
+-- Provision extensions as the superuser (this script runs as the container
+-- superuser). Services' "CREATE EXTENSION IF NOT EXISTS pgcrypto" migration then
+-- no-ops when Flyway runs as originex_owner under the rls profile — a non-superuser
+-- with CREATE on schema but not on the database, which cannot create an extension.
+-- Mirrors production, where a DBA/superuser provisions extensions ahead of the
+-- owner role (the same must be done in dev/init-scripts + prod provisioning when
+-- RLS is enabled — see dev/RLS_ENABLEMENT.md).
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
 
