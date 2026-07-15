@@ -141,7 +141,7 @@ class PaymentOrderTest {
 
             assertThatThrownBy(() -> o.cancel("Too late"))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("processing");
+                    .hasMessageContaining("being processed");
         }
 
         @Test
