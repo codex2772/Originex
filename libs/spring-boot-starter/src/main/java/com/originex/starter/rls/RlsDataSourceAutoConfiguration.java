@@ -58,6 +58,11 @@ public class RlsDataSourceAutoConfiguration {
         hikari.setPassword(cfg.getPassword());
         hikari.setMaximumPoolSize(cfg.getMaximumPoolSize());
         hikari.setPoolName(cfg.getPoolName() != null ? cfg.getPoolName() : "rls-" + which);
+        // Bind String parameters as an unspecified PostgreSQL type so a raw-JSON
+        // String (e.g. OutboxEventJpaEntity.metadataJson) is accepted by a jsonb
+        // column instead of being rejected as "character varying". Preserves the
+        // raw JSON (no re-serialization) and is scoped to these RLS pools.
+        hikari.addDataSourceProperty("stringtype", "unspecified");
         return hikari;
     }
 
