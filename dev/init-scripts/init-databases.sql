@@ -7,6 +7,16 @@
 --   2. One database per bounded context.
 --   3. Per-database CONNECT + schema privileges and default privileges so the
 --      app and system roles automatically receive DML on objects Flyway creates.
+--   4. The pgcrypto extension in each database. Every service's V1 migration runs
+--      CREATE EXTENSION IF NOT EXISTS "pgcrypto", which works today only because
+--      Flyway connects as the bootstrap superuser. Once a service enables RLS,
+--      the rls profile points Flyway at originex_owner — NOSUPERUSER and without
+--      CREATE on the database — which cannot create an extension (SQLSTATE 42501),
+--      so the service would fail to boot. Creating it here (as the superuser, at
+--      cluster init) makes that migration statement a harmless no-op. Idempotent,
+--      and required before any service can be switched to the rls profile. The
+--      test harness does the same — see libs/test-support rls/test-roles.sql.
+--      Production provisioning (DBA/IaC) must reproduce this too.
 --
 -- The database list must match spring.datasource.url in each service's
 -- application.yml exactly. Verified against the actual database name each of the
@@ -50,6 +60,7 @@ CREATE ROLE originex_app    WITH LOGIN PASSWORD 'originex_app_local'    NOSUPERU
 CREATE DATABASE originex_customer;
 GRANT ALL PRIVILEGES ON DATABASE originex_customer TO originex;
 \connect originex_customer
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_customer TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
@@ -63,6 +74,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE originex_owner IN SCHEMA public GRANT USAGE, S
 CREATE DATABASE originex_los;
 GRANT ALL PRIVILEGES ON DATABASE originex_los TO originex;
 \connect originex_los
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_los TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
@@ -76,6 +88,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE originex_owner IN SCHEMA public GRANT USAGE, S
 CREATE DATABASE originex_lms;
 GRANT ALL PRIVILEGES ON DATABASE originex_lms TO originex;
 \connect originex_lms
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_lms TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
@@ -89,6 +102,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE originex_owner IN SCHEMA public GRANT USAGE, S
 CREATE DATABASE originex_ledger;
 GRANT ALL PRIVILEGES ON DATABASE originex_ledger TO originex;
 \connect originex_ledger
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_ledger TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
@@ -102,6 +116,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE originex_owner IN SCHEMA public GRANT USAGE, S
 CREATE DATABASE originex_partner;
 GRANT ALL PRIVILEGES ON DATABASE originex_partner TO originex;
 \connect originex_partner
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_partner TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
@@ -115,6 +130,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE originex_owner IN SCHEMA public GRANT USAGE, S
 CREATE DATABASE originex_payment;
 GRANT ALL PRIVILEGES ON DATABASE originex_payment TO originex;
 \connect originex_payment
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_payment TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
@@ -128,6 +144,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE originex_owner IN SCHEMA public GRANT USAGE, S
 CREATE DATABASE originex_notification;
 GRANT ALL PRIVILEGES ON DATABASE originex_notification TO originex;
 \connect originex_notification
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_notification TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
@@ -141,6 +158,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE originex_owner IN SCHEMA public GRANT USAGE, S
 CREATE DATABASE originex_bre;
 GRANT ALL PRIVILEGES ON DATABASE originex_bre TO originex;
 \connect originex_bre
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_bre TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
@@ -155,6 +173,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE originex_owner IN SCHEMA public GRANT USAGE, S
 CREATE DATABASE originex_template;
 GRANT ALL PRIVILEGES ON DATABASE originex_template TO originex;
 \connect originex_template
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE originex_template TO originex_owner, originex_system, originex_app;
 GRANT USAGE, CREATE ON SCHEMA public TO originex_owner;
 GRANT USAGE ON SCHEMA public TO originex_system, originex_app;
