@@ -47,6 +47,14 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- Shared architecture fitness rules (SecurityArchRules) that services apply
+             to their own packages. Annotations are matched by fully-qualified name,
+             so no Spring Security dependency is needed here. -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+        </dependency>
+
         <!-- This module's own tests (realm-export sanity + Keycloak container IT). -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
