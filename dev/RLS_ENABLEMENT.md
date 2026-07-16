@@ -23,6 +23,47 @@ inactive, none of this loads and behaviour is identical to Phase 0.
 
 > Do **not** enable a service until its canary stage in the rollout plan.
 
+**Rollout status.** `customer-service` is the Phase 2 canary and is enabled: it
+carries `spring.profiles.include: rls` in its own `application.yml`, so the
+profile is active everywhere it runs. Every other service is still dark.
+RLS is not yet enabled in any **deployment** — `infra/helm` sets no profile.
+
+## "Enabled" is a claim about the service, not about a test
+
+Two different claims are easy to confuse, and confusing them wastes real time:
+
+| Claim | How you check it |
+|---|---|
+| *The service runs under RLS* | the profile is in the **service's own config or launch env** — `grep -rn "rls" services/<svc>/src/main/resources/ infra/helm/` |
+| *The RLS wiring works* | an integration test sets `@ActiveProfiles("rls")` |
+
+`@ActiveProfiles("rls")` activates the profile **only for that test's own
+context**. It proves the wiring is sound; it says nothing about whether the
+service is configured to run under RLS in CI or in a deployed environment. A
+repo can be full of green `rls` tests while every service still runs without it.
+When asked "is service X enabled?", look at X's configuration — not its tests.
+
+## The header path and the JWT path are mutually exclusive
+
+`TenantResolutionFilter` (which trusts the `X-Tenant-Id` header) is registered by
+`OriginexAutoConfiguration` **only while `originex.security.enabled=false`**
+(`havingValue = "false"`, `matchIfMissing = true`). Turn security on and that
+bean is never created: `TenantClaimResolutionFilter` takes over, tenant comes
+from the verified `tenant_id` claim, and under the default `ENFORCED` mode
+`X-Tenant-Id` is **ignored** entirely.
+
+The consequence for anyone enabling RLS on a service:
+
+> A header-driven RLS test proves the **pre-auth** path only. It cannot tell you
+> whether tenant isolation holds once authentication is on — it exercises a
+> filter that will not exist in that configuration.
+
+So each service needs **both**, and passing the first is not evidence for the
+second. `CustomerRlsJwtIsolationIntegrationTest` is the template for the second:
+real Keycloak (the actual `infra/keycloak/realm-export.json`), real minted
+tokens for two tenants, asserting that a spoofed `X-Tenant-Id` cannot override
+the claim in either direction and that an unauthenticated request is 401.
+
 ## What the profile assumes
 
 The `app`, `system`, and `owner` roles all connect to the **same database** as
@@ -96,7 +137,8 @@ Two layers, both tagged `@Tag("rls")`:
 | Layer | Example | Proves |
 |---|---|---|
 | DB semantics | `CustomerRlsSemanticsIntegrationTest` | isolation, `WITH CHECK`, fail-closed, system-role bypass — asserted directly via per-role datasources |
-| App wiring | `CustomerHttpRlsIsolationIntegrationTest`, `LmsRlsConsumerAndSchedulerIntegrationTest` | HTTP filter, Kafka `RecordInterceptor`, and `runAsSystem` scheduler set `app.tenant_id` end-to-end |
+| App wiring (pre-auth) | `CustomerHttpRlsIsolationIntegrationTest`, `LmsRlsConsumerAndSchedulerIntegrationTest` | `TenantResolutionFilter` (`X-Tenant-Id`), Kafka `RecordInterceptor`, and `runAsSystem` scheduler set `app.tenant_id` end-to-end — **with `originex.security.enabled=false` only** |
+| App wiring (authenticated) | `CustomerRlsJwtIsolationIntegrationTest` | the path production runs: `TenantClaimResolutionFilter` derives the tenant from a verified JWT claim, a spoofed `X-Tenant-Id` is ignored, unauthenticated → 401 |
 
 They are named `*IntegrationTest`, so they run under the existing failsafe
 profile and stay out of the unit (`surefire`) build. Run just the RLS suite with
@@ -107,7 +149,19 @@ mvn verify -Pintegration-test -Dgroups=rls          # RLS isolation tests only
 mvn verify -Pintegration-test                        # all integration tests
 ```
 
-Requires Docker (Testcontainers pulls `postgres:16-alpine` and, for LMS,
-`confluentinc/cp-kafka`). Adding coverage for another service is a matter of a
-test-scope dependency on `originex-test-support` plus a `@Tag("rls")` test built
-from `RlsPostgresSupport`.
+Requires Docker (Testcontainers pulls `postgres:16-alpine`, for LMS
+`confluentinc/cp-kafka`, and for the JWT tests `quay.io/keycloak/keycloak`).
+Adding coverage for another service is a matter of a test-scope dependency on
+`originex-test-support` plus a `@Tag("rls")` test built from
+`RlsPostgresSupport` (and `KeycloakSupport` for the authenticated layer).
+
+> **Known local blocker (2026-07-16).** On Docker Desktop 29+ these tests fail
+> locally with `Could not find a valid Docker environment` even though the
+> `docker` CLI works. It is not a socket problem: Testcontainers 1.20.4's
+> docker-java negotiates Docker API **v1.32**, and Docker 29 raised its
+> `MinAPI` to **1.40**, so the daemon rejects the call. Confirm with
+> `curl --unix-socket ~/.docker/run/docker.sock http://localhost/v1.32/info`
+> (zeroed payload) versus `/v1.44/info` (real data). `DOCKER_HOST`,
+> `DOCKER_API_VERSION`, and `~/.testcontainers.properties` do **not** work
+> around it; the fix is a Testcontainers upgrade (≥1.21.x). CI's runner has an
+> older daemon and is unaffected — so CI remains the gate until that lands.
