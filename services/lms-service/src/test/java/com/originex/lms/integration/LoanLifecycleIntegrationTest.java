@@ -50,7 +50,11 @@ import static org.awaitility.Awaitility.await;
                 // No Redis in the test harness; LMS declares it but never uses it.
                 "spring.autoconfigure.exclude="
                         + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration"
+                        + "org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration",
+                // Redis is excluded and actuator probes are inactive off-Kubernetes, so the
+                // app's health groups reference contributors absent here (livenessState, redis).
+                // Don't fail context load validating group membership.
+                "management.endpoint.health.validate-group-membership=false"
         })
 @Testcontainers
 @DisplayName("LMS loan lifecycle — disbursement → active → accrual → repayment (Testcontainers)")

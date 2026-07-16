@@ -67,7 +67,11 @@ import static org.awaitility.Awaitility.await;
                 "originex.lms.dpd.cron=0 0 3 1 1 ?",
                 "spring.autoconfigure.exclude="
                         + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration"
+                        + "org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration",
+                // Redis is excluded and actuator probes are inactive off-Kubernetes, so the
+                // app's health groups reference contributors absent here (livenessState, redis).
+                // Don't fail context load validating group membership.
+                "management.endpoint.health.validate-group-membership=false"
         })
 @ActiveProfiles("rls")
 @Testcontainers
