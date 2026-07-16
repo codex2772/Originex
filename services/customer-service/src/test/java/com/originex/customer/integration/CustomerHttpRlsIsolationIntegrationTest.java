@@ -45,7 +45,12 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "spring.autoconfigure.exclude="
                         + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
                         + "org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration"
+                        + "org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration",
+                // This sliced context excludes Redis and runs off-Kubernetes, so the app's
+                // health groups (readiness: db,redis / liveness: livenessState) reference
+                // contributors that aren't present here. Don't fail context load validating
+                // group membership — the groups themselves are exercised in the real runtime.
+                "management.endpoint.health.validate-group-membership=false"
         })
 @ActiveProfiles("rls")
 @Testcontainers
