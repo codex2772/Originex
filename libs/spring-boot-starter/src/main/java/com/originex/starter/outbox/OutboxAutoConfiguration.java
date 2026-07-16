@@ -13,11 +13,20 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 /**
  * Auto-configuration for the Transactional Outbox pattern.
  * Activates when JPA and Kafka are both on the classpath.
+ *
+ * <p><b>Scanning scope.</b> The outbox entities/repositories live in this starter
+ * package (not under a service's base package), so they must be scanned explicitly.
+ * But {@code @EntityScan}/{@code @EnableJpaRepositories} <i>replace</i> Spring Boot's
+ * default (the service's auto-configuration package) rather than add to it — so
+ * pointing them only at this package would suppress every service's own entities and
+ * repositories. They are therefore scoped to the shared {@code com.originex} root,
+ * which covers both this starter's outbox package and each service's own packages
+ * (services carry only platform + their own code on the classpath).
  */
 @AutoConfiguration
 @ConditionalOnClass(name = "jakarta.persistence.Entity")
-@EnableJpaRepositories(basePackageClasses = OutboxEventRepository.class)
-@EntityScan(basePackageClasses = OutboxEventJpaEntity.class)
+@EnableJpaRepositories(basePackages = "com.originex")
+@EntityScan(basePackages = "com.originex")
 @EnableScheduling
 public class OutboxAutoConfiguration {
 
