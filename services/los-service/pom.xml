@@ -104,6 +104,12 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- RlsPostgresSupport (RLS roles + pgcrypto) and KeycloakSupport (real realm, minted JWTs). -->
+        <dependency>
+            <groupId>com.originex</groupId>
+            <artifactId>originex-test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
