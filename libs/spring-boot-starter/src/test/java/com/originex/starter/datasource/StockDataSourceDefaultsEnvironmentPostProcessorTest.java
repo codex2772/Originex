@@ -3,10 +3,15 @@ package com.originex.starter.datasource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.env.EnvironmentPostProcessor;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.mock.env.MockEnvironment;
 
+import java.io.InputStream;
+import java.net.URL;
+import java.util.Enumeration;
 import java.util.Map;
+import java.util.Properties;
 
 import static com.originex.starter.datasource.StockDataSourceDefaultsEnvironmentPostProcessor.STRINGTYPE_PROPERTY;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +30,38 @@ class StockDataSourceDefaultsEnvironmentPostProcessorTest {
         processor.postProcessEnvironment(environment, new SpringApplication());
 
         assertThat(environment.getProperty(STRINGTYPE_PROPERTY)).isEqualTo("unspecified");
+    }
+
+    @Test
+    @DisplayName("is registered in META-INF/spring.factories so Spring actually runs it")
+    void isRegisteredForDiscovery() throws Exception {
+        // Without this, the class is inert: the post-processor never runs, no property is
+        // contributed, and outbox writes keep failing — while every other test here still
+        // passes, because they exercise the class directly. An earlier attempt registered
+        // it via META-INF/spring/...EnvironmentPostProcessor.imports, which Spring ignores:
+        // the .imports mechanism is for AutoConfiguration only. EnvironmentPostProcessor
+        // must be declared in spring.factories.
+        Enumeration<URL> resources =
+                getClass().getClassLoader().getResources("META-INF/spring.factories");
+
+        boolean registered = false;
+        while (resources.hasMoreElements()) {
+            Properties properties = new Properties();
+            try (InputStream in = resources.nextElement().openStream()) {
+                properties.load(in);
+            }
+            String declared = properties.getProperty(EnvironmentPostProcessor.class.getName());
+            if (declared != null
+                    && declared.contains(StockDataSourceDefaultsEnvironmentPostProcessor.class.getName())) {
+                registered = true;
+                break;
+            }
+        }
+
+        assertThat(registered)
+                .as("StockDataSourceDefaultsEnvironmentPostProcessor must be declared under "
+                        + EnvironmentPostProcessor.class.getName() + " in META-INF/spring.factories")
+                .isTrue();
     }
 
     @Test
