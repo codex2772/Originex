@@ -64,6 +64,40 @@ real Keycloak (the actual `infra/keycloak/realm-export.json`), real minted
 tokens for two tenants, asserting that a spoofed `X-Tenant-Id` cannot override
 the claim in either direction and that an unauthenticated request is 401.
 
+## Enabling a service is not a one-liner — budget for the test
+
+The rollout plan reads as one profile flip per service. That is misleading. The
+flip is one line; **the work is the test that gives the canary something to
+prove.** As of 2026-07-17, outside customer-service and lms, *no service has a
+single context-booting test*:
+
+| Service | Context-booting tests | RLS policies | What enabling it costs |
+|---|---|---|---|
+| ledger | 0 | 9 | write its first boot-level RLS IT, then flip |
+| payment | 0 | 4 | write its first boot-level RLS IT, then flip |
+| los | 0 | 6 | write its first boot-level RLS IT, then flip |
+| notification | 0 | 4 | write its first boot-level RLS IT, then flip |
+| bre | 0 | 4 | write its first boot-level RLS IT, then flip |
+| partner-integration | 0 (no tests at all) | 2 | write its first boot-level RLS IT, then flip |
+| lms | 2 | 6 | **also** migrate `LoanLifecycleIntegrationTest` to `RlsPostgresSupport` first |
+
+Two consequences worth being blunt about:
+
+1. **A clean flip is not a green light.** On a service with no context-booting
+   test, adding the profile breaks nothing *and exercises nothing*. CI stays
+   green while the service has never been observed booting under `rls`. Do not
+   read that green as evidence — it is the absence of evidence.
+2. **`spring.profiles.include: rls` is unconditional.** It applies to every
+   Spring context the service loads, including tests. A `@SpringBootTest`
+   without `@ActiveProfiles("rls")` on a plain `PostgreSQLContainer` (no RLS
+   roles) will fail at boot on a missing `originex_app` — fail-loud working as
+   designed, but confusing if unexpected. `lms` is the live example: its
+   `LoanLifecycleIntegrationTest` must move to `RlsPostgresSupport` **before**
+   its canary, not as part of it.
+
+Per service, budget: one JWT-driven RLS IT (template above) + the flip +
+whatever the IT uncovers — not a one-line change.
+
 ## What the profile assumes
 
 The `app`, `system`, and `owner` roles all connect to the **same database** as
