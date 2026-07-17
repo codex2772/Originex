@@ -6,6 +6,8 @@ import com.originex.payment.application.port.in.PaymentUseCase;
 import com.originex.payment.application.port.out.NachMandateRepository;
 import com.originex.payment.application.port.out.PaymentOrderRepository;
 import com.originex.payment.application.port.out.PaymentRailPort;
+import com.originex.payment.domain.exception.NachMandateNotFoundException;
+import com.originex.payment.domain.exception.PaymentOrderNotFoundException;
 import com.originex.payment.domain.model.NachMandate;
 import com.originex.payment.domain.model.PaymentOrder;
 import com.originex.payment.domain.model.PaymentOrder.PaymentRail;
@@ -136,7 +138,7 @@ public class PaymentApplicationService implements PaymentUseCase {
         log.info("Triggering NACH collection: loanId={}, amount={}", command.loanId(), command.amount());
 
         NachMandate mandate = nachMandateRepository.findById(command.tenantId(), command.mandateId())
-                .orElseThrow(() -> new IllegalArgumentException("NACH mandate not found: " + command.mandateId()));
+                .orElseThrow(() -> new NachMandateNotFoundException(command.mandateId()));
 
         if (!mandate.isActive()) {
             throw new IllegalStateException("NACH mandate is not active: " + command.mandateId() + " status=" + mandate.getStatus());
@@ -195,7 +197,7 @@ public class PaymentApplicationService implements PaymentUseCase {
     @Transactional(readOnly = true)
     public PaymentOrder getPaymentOrder(UUID tenantId, UUID paymentOrderId) {
         return paymentOrderRepository.findById(tenantId, paymentOrderId)
-                .orElseThrow(() -> new IllegalArgumentException("Payment order not found: " + paymentOrderId));
+                .orElseThrow(() -> new PaymentOrderNotFoundException(paymentOrderId));
     }
 
     @Override
