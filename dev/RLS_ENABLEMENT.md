@@ -23,10 +23,25 @@ inactive, none of this loads and behaviour is identical to Phase 0.
 
 > Do **not** enable a service until its canary stage in the rollout plan.
 
-**Rollout status.** `customer-service` is the Phase 2 canary and is enabled: it
-carries `spring.profiles.include: rls` in its own `application.yml`, so the
-profile is active everywhere it runs. Every other service is still dark.
-RLS is not yet enabled in any **deployment** — `infra/helm` sets no profile.
+**Rollout status** (2026-07-17). Two services are enabled — each carries
+`spring.profiles.include: rls` in its own `application.yml`, so the profile is
+active everywhere it runs:
+
+| Service | Enabled | What its canary actually proves |
+|---|---|---|
+| `customer-service` | `d1af8ad` | JWT→RLS isolation on the HTTP path (`CustomerRlsJwtIsolationIntegrationTest`, CI 3/3) |
+| `ledger-service` | `dbb80fc` | isolation proven for **account read/write only**; the **posting and outbox paths are unexercised** — see issue #5 |
+
+The remaining six are dark. RLS is not yet enabled in any **deployment** —
+`infra/helm` sets no profile.
+
+> Read the right-hand column literally. "Canary green" means *the paths that
+> canary drives* are proven, not that the service is. Ledger's IT covers
+> `POST /v1/ledger/accounts` → `GET`, which is DB-only by design; nothing
+> exercises `POST /v1/ledger/journal-entries`, its outbox write, or its
+> posting logic — and issue #5 is an open, undiagnosed failure on exactly
+> that path. Apply the same reading to every service you enable: state what
+> the IT drives, not what the service contains.
 
 ## "Enabled" is a claim about the service, not about a test
 
