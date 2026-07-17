@@ -27,12 +27,14 @@ inactive, none of this loads and behaviour is identical to Phase 0.
 `spring.profiles.include: rls` in its own `application.yml`, so the profile is
 active everywhere it runs:
 
-| Service | Enabled | What its canary actually proves |
+| Service | Enabled | What its canary actually proves — and what it does not |
 |---|---|---|
-| `customer-service` | `d1af8ad` | JWT→RLS isolation on the HTTP path (`CustomerRlsJwtIsolationIntegrationTest`, CI 3/3) |
-| `ledger-service` | `dbb80fc` | isolation proven for **account read/write only**; the **posting and outbox paths are unexercised** — see issue #5 |
+| `customer-service` | `d1af8ad` | JWT→RLS isolation on the HTTP path (`CustomerRlsJwtIsolationIntegrationTest`, CI 3/3). Registration is DB-only, so the outbox is unexercised. |
+| `ledger-service` | `dbb80fc` | isolation for **account read/write only** (CI 3/3). The **posting and outbox paths are unexercised** — and issue #5 is an open, undiagnosed failure on exactly that path. |
+| `payment-service` | `d295293` | isolation **and** the transactional outbox on the RLS datasource (CI 4/4). Callback/inbound paths unexercised; its `Location` header is broken (KI-7). |
+| `los-service` | *this commit* | isolation **and** the outbox (CI 4/4). **`CustomerVerificationPort` is mocked**, so los's outbound REST adapters and their **resilience4j circuit-breaker / retry / fallback behaviour are NOT exercised** — a green canary says nothing about them. They need their own test. |
 
-The remaining six are dark. RLS is not yet enabled in any **deployment** —
+The remaining four are dark. RLS is not yet enabled in any **deployment** —
 `infra/helm` sets no profile.
 
 > Read the right-hand column literally. "Canary green" means *the paths that
@@ -40,8 +42,11 @@ The remaining six are dark. RLS is not yet enabled in any **deployment** —
 > `POST /v1/ledger/accounts` → `GET`, which is DB-only by design; nothing
 > exercises `POST /v1/ledger/journal-entries`, its outbox write, or its
 > posting logic — and issue #5 is an open, undiagnosed failure on exactly
-> that path. Apply the same reading to every service you enable: state what
-> the IT drives, not what the service contains.
+> that path. los's IT mocks the one collaborator on its write path, so its
+> circuit-breaker and fallback behaviour is equally unproven. Apply the same
+> reading to every service you enable: state what the IT drives, not what the
+> service contains — and where a collaborator is mocked, say so, because the
+> mock is the boundary of what the green means.
 
 ## "Enabled" is a claim about the service, not about a test
 

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -23,6 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -107,8 +107,11 @@ class LosRlsJwtIsolationIntegrationTest {
     /**
      * The only collaborator on the submit path. Real behaviour would call
      * customer-service over HTTP; that is not what this canary asks about.
+     *
+     * <p>{@code @MockitoBean}, not Boot's {@code @MockBean} — the latter is
+     * deprecated and marked for removal in Boot 3.4.
      */
-    @MockBean
+    @MockitoBean
     CustomerVerificationPort customerVerificationPort;
 
     @DynamicPropertySource
