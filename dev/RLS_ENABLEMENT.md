@@ -32,10 +32,19 @@ active everywhere it runs:
 | `customer-service` | `d1af8ad` | JWT→RLS isolation on the HTTP path (`CustomerRlsJwtIsolationIntegrationTest`, CI 3/3). Registration is DB-only, so the outbox is unexercised. |
 | `ledger-service` | `dbb80fc` | isolation for **account read/write only** (CI 3/3). The **posting and outbox paths are unexercised** — and issue #5 is an open, undiagnosed failure on exactly that path. |
 | `payment-service` | `d295293` | isolation **and** the transactional outbox on the RLS datasource (CI 4/4). Callback/inbound paths unexercised; its `Location` header is broken (KI-7). |
-| `los-service` | *this commit* | isolation **and** the outbox (CI 4/4). **`CustomerVerificationPort` is mocked**, so los's outbound REST adapters and their **resilience4j circuit-breaker / retry / fallback behaviour are NOT exercised** — a green canary says nothing about them. They need their own test. |
+| `los-service` | `4b9ac9d` | isolation **and** the outbox (CI 4/4). **`CustomerVerificationPort` is mocked**, so los's outbound REST adapters and their **resilience4j circuit-breaker / retry / fallback behaviour are NOT exercised** — a green canary says nothing about them. They need their own test. |
+| `notification-service` | *this commit* | **Kafka-header→RLS isolation**, not JWT→RLS — a distinct claim. notification has **no HTTP surface**; its tenant arrives on the Kafka `tenant_id` header via `TenantRecordInterceptor` (`NotificationRlsKafkaIsolationIntegrationTest`, CI 3/3). Deliberately **no OAuth2 opt-in** — a `JwtDecoder` with nothing to decode would be dead config. Channel dispatch is stubbed by the seeded templates only; the real SMS/email senders are unexercised. |
 
-The remaining four are dark. RLS is not yet enabled in any **deployment** —
+The remaining three are dark. RLS is not yet enabled in any **deployment** —
 `infra/helm` sets no profile.
+
+> Note the two claim shapes. Four canaries prove **JWT→RLS** over HTTP (tenant
+> from a verified bearer claim via `TenantClaimResolutionFilter`).
+> `notification` proves **Kafka-header→RLS** (tenant from a `tenant_id` record
+> header via `TenantRecordInterceptor`) — there is no HTTP request to carry a
+> token, so JWT→RLS has no meaning for it. A service with only a consumer surface
+> takes the second shape, and should not opt in to the OAuth2 resource server
+> just for parity: verify auth against a real surface, or not at all.
 
 > Read the right-hand column literally. "Canary green" means *the paths that
 > canary drives* are proven, not that the service is. Ledger's IT covers
