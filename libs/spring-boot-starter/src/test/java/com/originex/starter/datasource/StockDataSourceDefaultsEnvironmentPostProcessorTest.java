@@ -1,9 +1,13 @@
 package com.originex.starter.datasource;
 
+import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.env.EnvironmentPostProcessor;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.mock.env.MockEnvironment;
 
@@ -62,6 +66,31 @@ class StockDataSourceDefaultsEnvironmentPostProcessorTest {
                 .as("StockDataSourceDefaultsEnvironmentPostProcessor must be declared under "
                         + EnvironmentPostProcessor.class.getName() + " in META-INF/spring.factories")
                 .isTrue();
+    }
+
+    @Test
+    @DisplayName("the property name actually binds to the Hikari pool's driver properties")
+    void propertyBindsToTheHikariPool() {
+        // The other tests prove the property is contributed and discoverable. This proves
+        // the last link: that STRINGTYPE_PROPERTY is the name Spring Boot binds to
+        // HikariConfig.dataSourceProperties, so the driver really receives it. Without
+        // this, a renamed/misspelt property key would leave the post-processor running,
+        // every test green, and jsonb writes still failing. Hikari does not connect at
+        // construction, so no database is needed.
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataSourceAutoConfiguration.class))
+                .withPropertyValues(
+                        "spring.datasource.url=jdbc:postgresql://localhost:1/never-connected",
+                        "spring.datasource.username=originex",
+                        "spring.datasource.password=originex_local",
+                        STRINGTYPE_PROPERTY + "=unspecified")
+                .run(context -> {
+                    HikariDataSource dataSource = context.getBean(HikariDataSource.class);
+                    assertThat(dataSource.getDataSourceProperties().getProperty("stringtype"))
+                            .as("pgjdbc receives stringtype=unspecified, so a raw-JSON String "
+                                    + "is accepted by a jsonb column")
+                            .isEqualTo("unspecified");
+                });
     }
 
     @Test

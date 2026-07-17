@@ -99,5 +99,16 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+          Driver class only, so DataSourceAutoConfiguration can construct a Hikari pool in
+          StockDataSourceDefaultsEnvironmentPostProcessorTest. Hikari does not connect at
+          construction, so no database is involved. Services declare postgresql at runtime
+          scope themselves; the starter needs it for this test alone.
+        -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
