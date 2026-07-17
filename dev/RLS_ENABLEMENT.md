@@ -120,6 +120,34 @@ So each canary is **three commits, stop-and-wait after each, CI as the gate**:
 2. **Write the JWT-driven RLS IT** (template: `CustomerRlsJwtIsolationIntegrationTest`).
 3. **Flip `spring.profiles.include: rls`** — with boot evidence, not assumption.
 
+### Check the not-found mapping *before* writing the IT
+
+The isolation test asserts that another tenant's row reads as **404**. That only
+holds if the service throws a `ResourceNotFoundException`. Most don't yet — see
+issue #4 — so **check first, or the IT asserts the wrong status and the failure
+looks like an RLS regression when it isn't**:
+
+```bash
+grep -rn "IllegalArgumentException" services/<svc>-service/src/main/java | grep -i "not found"
+```
+
+Any hit ⇒ that service needs a small `fix(<svc>): map resource-not-found to HTTP
+404` commit **before** its IT, as its own commit (ledger's `99164b5` is the
+worked example; `3b942db` is the original precedent). Do not bulk-fix other
+services — each one belongs to that service's own canary.
+
+Known state as of 2026-07-17: **ledger** fixed (`99164b5`); **payment**, **lms**,
+and **customer**'s bank-account lookup still throw `IllegalArgumentException` →
+400; **los** and **template** throw a `NotFoundException` that extends
+`RuntimeException`, never reaches the 404 handler, and surfaces as **500** — a
+worse failure needing the exception re-parented, not just swapped. Only
+**bre**, **notification**, and **partner-integration** are clean.
+
+This is not cosmetic. `ResourceNotFoundException`'s contract is explicit that a
+row hidden by RLS must surface as 404 — *"another tenant's record is simply 'not
+found'"* — so a service that 400s or 500s on a cross-tenant read is reporting
+tenant isolation incorrectly, whatever its test asserts.
+
 Two things that must **not** get folded in:
 
 - **The realm needs no change.** `originex-tenant` is a *default* client scope on
