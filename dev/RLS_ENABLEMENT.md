@@ -98,6 +98,44 @@ Two consequences worth being blunt about:
 Per service, budget: one JWT-driven RLS IT (template above) + the flip +
 whatever the IT uncovers — not a one-line change.
 
+### The three-commit shape (every remaining service)
+
+`spring-boot-starter-oauth2-resource-server` is on **customer-service only** — it
+was the Phase 1 auth canary. Every other service must opt in before security can
+be enabled at all: `SecurityAutoConfiguration` builds the `JwtDecoder` under
+`originex.security.enabled=true`, and without the dependency there is no decoder,
+so a JWT-driven RLS test is impossible. Verify before assuming otherwise:
+
+```bash
+grep -c oauth2-resource-server services/<svc>-service/pom.xml   # 0 ⇒ not opted in
+```
+
+So each canary is **three commits, stop-and-wait after each, CI as the gate**:
+
+1. **Opt into the OAuth2 resource server.** Dependency + a port of
+   `SecurityOptInVerificationTest` proving the opt-in changes nothing while
+   `originex.security.enabled=false`. This is **Phase 1 work executed inside the
+   canary for sequencing convenience** — it is not part of Phase 2's identity, and
+   it gets its own commit rather than being folded into the RLS work.
+2. **Write the JWT-driven RLS IT** (template: `CustomerRlsJwtIsolationIntegrationTest`).
+3. **Flip `spring.profiles.include: rls`** — with boot evidence, not assumption.
+
+Two things that must **not** get folded in:
+
+- **The realm needs no change.** `originex-tenant` is a *default* client scope on
+  `originex-web`, so tokens for `customer-alice` / `customer-bob` already carry
+  `tenant_id`. Tenant isolation is provable without touching Keycloak.
+- **Authorization is a separate concern.** `OriginexScopes` defines per-domain
+  scopes (`ledger:read`, `ledger:post`, …) that the realm does not yet publish, and
+  no service outside customer-service has `@PreAuthorize`. None of that is needed
+  to prove tenant isolation — the verified claim drives RLS regardless. Adding
+  `@PreAuthorize` + realm scopes is Phase 1 authz work, its own commit.
+
+**`lms` carries two extra prerequisites** before its canary, deliberately explicit
+rather than absorbed into "do it like the others": the outbox `jsonb`/SQLSTATE
+42804 failure (issue #3) and migrating `LoanLifecycleIntegrationTest` to
+`RlsPostgresSupport`. Order it last.
+
 ## What the profile assumes
 
 The `app`, `system`, and `owner` roles all connect to the **same database** as
