@@ -153,9 +153,19 @@ class LoanLifecycleIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "select status from disbursements where tenant_id = ?::uuid and loan_id = ?", String.class, TENANT, loanId))
                 .isEqualTo("INITIATED");
-        // LoanDisbursed is in the outbox, carrying the beneficiary; inbox recorded the request
+        // LoanDisbursed is in the outbox; inbox recorded the request. Assert the payload carries
+        // every field its downstream consumers parse — a producer-side contract guard against the
+        // "green tests, broken reality" drift a full multi-service boot would otherwise be needed
+        // to catch: ledger's LmsEventConsumer reads loan_id + amount; payment's
+        // LmsPaymentEventConsumer additionally *requires* beneficiary_account + beneficiary_ifsc
+        // (it logs an error and skips the disbursement without them).
         String loanDisbursedPayload = outboxPayload("originex.lms.LoanDisbursed");
-        assertThat(loanDisbursedPayload).contains("\"beneficiary_account\":\"1234567890\"");
+        assertThat(loanDisbursedPayload)
+                .as("LoanDisbursed must carry the fields the ledger and payment consumers parse")
+                .contains("\"loan_id\":")
+                .contains("\"amount\":")
+                .contains("\"beneficiary_account\":\"1234567890\"")
+                .contains("\"beneficiary_ifsc\":");
         assertThat(inboxCount(reqEventId)).isEqualTo(1);
 
         // ── 2. Idempotency: redeliver DisbursementRequested → no second loan ──
@@ -182,7 +192,12 @@ class LoanLifecycleIntegrationTest {
         accrual.runDailyAccrual();
         BigDecimal afterFirst = outstandingInterest(loanId);
         assertThat(afterFirst).isGreaterThan(BigDecimal.ZERO);
-        assertThat(outboxPayload("originex.lms.InterestAccrued")).contains(loanId.toString());
+        // Contract guard: ledger's handleInterestAccrued reads loan_id + accrued_amount.
+        assertThat(outboxPayload("originex.lms.InterestAccrued"))
+                .as("InterestAccrued must carry the fields ledger's consumer parses")
+                .contains(loanId.toString())
+                .contains("\"loan_id\":")
+                .contains("\"accrued_amount\":");
 
         // idempotent: a same-day rerun accrues nothing further
         accrual.runDailyAccrual();
@@ -198,7 +213,13 @@ class LoanLifecycleIntegrationTest {
         } finally {
             TenantContextHolder.clear();
         }
-        assertThat(outboxPayload("originex.lms.RepaymentAllocated")).contains(loanId.toString());
+        // Contract guard: ledger's handleRepaymentAllocated reads loan_id + principal + interest.
+        assertThat(outboxPayload("originex.lms.RepaymentAllocated"))
+                .as("RepaymentAllocated must carry the fields ledger's consumer parses")
+                .contains(loanId.toString())
+                .contains("\"loan_id\":")
+                .contains("\"principal\":")
+                .contains("\"interest\":");
         // repayment settled the schedule: the oldest installment now shows paid amounts
         assertThat(jdbc.queryForObject(
                 "select count(*) from installments where loan_id = ? and (principal_paid > 0 or interest_paid > 0)",

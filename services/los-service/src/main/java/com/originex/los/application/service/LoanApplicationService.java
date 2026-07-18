@@ -358,7 +358,12 @@ public class LoanApplicationService implements LoanApplicationUseCase {
         ).getBytes(StandardCharsets.UTF_8);
     }
 
-    private byte[] buildDisbursementRequestedPayload(LoanApplication app,
+    // Package-private + static so DisbursementRequestedPayloadContractTest can assert the emitted
+    // payload carries every field its downstream consumers parse (lms's DisbursementRequestedConsumer
+    // requires customer_id/application_id/product_code/sanctioned_amount/interest_rate/tenure_months/emi;
+    // the beneficiary fields flow through lms's LoanDisbursed to payment, which requires them). This is
+    // the producer-side contract guard chosen over a full multi-service e2e boot.
+    static byte[] buildDisbursementRequestedPayload(LoanApplication app,
                                                      CustomerVerificationPort.BeneficiaryAccount beneficiary) {
         var offer = app.getCurrentOffer();
         return String.format(
