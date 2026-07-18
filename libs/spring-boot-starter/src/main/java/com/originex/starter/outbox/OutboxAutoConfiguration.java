@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
@@ -17,6 +18,16 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * Kafka, and is therefore isolated in a nested {@link KafkaPollerConfiguration}
  * gated on {@code @ConditionalOnClass(KafkaTemplate.class)} — see the note there.
  *
+ * <p><b>{@code @AutoConfigureAfter(KafkaAutoConfiguration.class)} is load-bearing.</b>
+ * The poller's {@code @ConditionalOnBean(KafkaTemplate.class)} is evaluated while this
+ * auto-configuration is processed. Without ordering, that happens <i>before</i>
+ * {@code KafkaAutoConfiguration} has registered the {@code kafkaTemplate} bean, so the
+ * condition finds no {@code KafkaTemplate}, the poller bean is skipped, and it never
+ * re-evaluates — the outbox writes rows but nothing ever publishes them to Kafka (the
+ * defect was live and silent: no test exercised the outbox→poller→Kafka path). Ordering
+ * this after {@code KafkaAutoConfiguration} makes the {@code kafkaTemplate} bean exist
+ * before the condition runs.
+ *
  * <p><b>Scanning scope.</b> The outbox entities/repositories live in this starter
  * package (not under a service's base package), so they must be scanned explicitly.
  * But {@code @EntityScan}/{@code @EnableJpaRepositories} <i>replace</i> Spring Boot's
@@ -26,7 +37,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * which covers both this starter's outbox package and each service's own packages
  * (services carry only platform + their own code on the classpath).
  */
-@AutoConfiguration
+@AutoConfiguration(after = KafkaAutoConfiguration.class)
 @ConditionalOnClass(name = "jakarta.persistence.Entity")
 @EnableJpaRepositories(basePackages = "com.originex")
 @EntityScan(basePackages = "com.originex")

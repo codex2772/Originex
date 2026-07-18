@@ -100,6 +100,17 @@
             <scope>test</scope>
         </dependency>
         <!--
+          In-memory JPA for OutboxPollerWiringTest: the outbox poller depends on a JPA
+          OutboxEventRepository, so the wiring test needs a real EntityManagerFactory.
+          H2 with ddl-auto=none builds the EMF without touching the schema (the entity's
+          jsonb column has no H2 equivalent, and the test asserts bean presence, not DB I/O).
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
           Driver class only, so DataSourceAutoConfiguration can construct a Hikari pool in
           StockDataSourceDefaultsEnvironmentPostProcessorTest. Hikari does not connect at
           construction, so no database is involved. Services declare postgresql at runtime
