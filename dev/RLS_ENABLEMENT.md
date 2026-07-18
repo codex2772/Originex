@@ -36,37 +36,30 @@ active everywhere it runs:
 | `notification-service` | `4c55123` | **Kafka-header→RLS isolation**, not JWT→RLS — a distinct claim. notification has **no HTTP surface**; its tenant arrives on the Kafka `tenant_id` header via `TenantRecordInterceptor` (`NotificationRlsKafkaIsolationIntegrationTest`, CI 3/3). Deliberately **no OAuth2 opt-in** — a `JwtDecoder` with nothing to decode would be dead config. Channel dispatch is stubbed by the seeded templates only; the real SMS/email senders are unexercised. |
 | `bre-service` | `70eeaee` | JWT→RLS isolation over **rule reads** — a read-only evaluator (no writes, no outbox, no GET-back), so the proof is a decision contrast (alice `APPROVED` vs bob `REFER`) plus a datasource check that `originex_app` sees only its tenant's rule sets (`BreRlsJwtIsolationIntegrationTest`, CI 4/4). **Required a correctness fix first (`4777459`) — see the severity note below.** The rule-authoring HTTP surface is not exercised (rules are seeded via the owner). |
 | `partner-integration-service` | `1614b9f` | **Write-side** JWT→RLS isolation — the only canary that asserts a persisted row rather than a read-back (there is no GET endpoint). A verify persists an `integration_requests` row under the caller's tenant; the proof is datasource isolation plus **WITH CHECK** (a spoofed `X-Tenant-Id` still stamps the row with the JWT's tenant, not the header's) (`PartnerRlsJwtIsolationIntegrationTest`, CI 3/3). Only the credit-bureau path caches and it is unexercised; sandbox adapters, so live partner integrations are unexercised. |
-| `lms-service` | **NOT enabled** | **Outstanding — the eighth service, canary not done.** Its `application.yml` has no `spring.profiles.include: rls`. `LmsRlsConsumerAndSchedulerIntegrationTest` proves the RLS *wiring* (consumer + scheduler) under `@ActiveProfiles("rls")`, but that is a test opting into the profile, **not the service being enabled** — see the two-claims section below. See prerequisites and correction note. |
+| `lms-service` | *this commit* | Enabled. Its RLS **wiring** — Kafka consumer isolation + cross-tenant scheduler — was proven earlier by `LmsRlsConsumerAndSchedulerIntegrationTest` (CI 1/1); the full loan lifecycle is now proven under the profile too by `LoanLifecycleIntegrationTest` (migrated to `RlsPostgresSupport` in `3f3d702`, CI 1/1). Together those exercise the consumer path, the scheduler (system role), and a direct app-path `recordRepayment` under RLS. |
 
-**Seven of eight services are enabled; `lms-service` is not.** The canary rollout
-(Commit 3) is **not** complete.
+**All eight services are now enabled — the Phase 2 canary rollout (Commit 3) is
+complete.** (This claim was made prematurely once before, on `1614b9f`, when only
+seven were enabled; see the correction below. It is accurate now: `lms-service`
+carries `spring.profiles.include: rls` as of this commit, its two prerequisites
+resolved.)
 
-> **Correction (2026-07-18).** An earlier version of this table and the commit
-> message of `1614b9f` claimed "all eight services enabled / rollout complete."
-> That was wrong: it counted `lms` as done because
-> `LmsRlsConsumerAndSchedulerIntegrationTest` runs under `@ActiveProfiles("rls")`,
-> which is exactly the *test-is-not-enablement* conflation this document warns
-> against. `lms` has no `include: rls` in its config and its canary was never
-> completed. `1614b9f`'s message stands uncorrected in git history (it is pushed);
-> this note is the correction of record.
+> **Correction of record (2026-07-18).** The commit message of `1614b9f` and an
+> earlier version of this table claimed "all eight enabled / rollout complete" when
+> only **seven** were: it counted `lms` as done because
+> `LmsRlsConsumerAndSchedulerIntegrationTest` runs under `@ActiveProfiles("rls")` —
+> the *test-is-not-enablement* conflation this document warns against. `lms` was
+> genuinely enabled later (this commit), after both prerequisites were met:
+> (1) the jsonb fix (`51d6246`); (2) migrating `LoanLifecycleIntegrationTest` to
+> `RlsPostgresSupport` (`3f3d702`) so it wouldn't fail at boot on a missing
+> `originex_app` under the profile. `1614b9f`'s message stands uncorrected in git
+> history (it is pushed); this note is the correction.
 
-**Completing `lms`'s canary** (still outstanding), in order:
-1. **jsonb prerequisite — DONE** (`51d6246`, the stock-datasource `stringtype` fix).
-   `LoanLifecycleIntegrationTest` is CI-green today.
-2. **Migrate `LoanLifecycleIntegrationTest` to `RlsPostgresSupport` — PENDING.** It
-   still uses a plain `PostgreSQLContainer` with no RLS roles and no `rls` profile.
-   This must happen *before* the flip: adding `include: rls` to lms's config makes
-   this `@SpringBootTest` inherit the profile and fail loud at boot on a missing
-   `originex_app`. This is the hazard that got `lms` deferred to last in the first
-   place, and it was never resolved.
-3. **Write the JWT-driven RLS IT** (as the other canaries have) and **flip** the
-   profile — with boot-drive + CI evidence, same standard as the seven done.
-
-RLS is also enabled in **no deployment**: `infra/helm` sets no profile, so even the
-seven are config + tests only. Turning it on in a deployed environment (setting
+RLS is still enabled in **no deployment**: `infra/helm` sets no profile, so this is
+config + tests only. Turning it on in a deployed environment (setting
 `SPRING_PROFILES_ACTIVE` to include `rls`, with the roles + pgcrypto provisioned by
-DBA/IaC) remains outstanding. **Phase 2 closes when both `lms` is enabled and RLS
-runs in a real deployment** — neither is done.
+DBA/IaC) remains outstanding. **The canary rollout being complete is not Phase 2
+being closed** — that needs RLS running in a real deployment, which is not done.
 
 > **Severity note — `4777459` is a different class of bug from the others.** Most
 > per-service fixes in this rollout were **availability** failures caught by
