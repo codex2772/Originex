@@ -33,10 +33,26 @@ active everywhere it runs:
 | `ledger-service` | `dbb80fc` | isolation for **account read/write only** (CI 3/3). The **posting and outbox paths are unexercised** — and issue #5 is an open, undiagnosed failure on exactly that path. |
 | `payment-service` | `d295293` | isolation **and** the transactional outbox *write* on the RLS datasource (CI 4/4). The outbox row is written and typed correctly (`jsonb`); whether the poller reliably **publishes** it downstream is a separate, currently open question (KI-8). Callback/inbound paths unexercised; its `Location` header is broken (KI-7). |
 | `los-service` | `4b9ac9d` | isolation **and** the outbox *write* (CI 4/4) — row written and typed correctly; downstream **publication** is the separate open question in KI-8. **`CustomerVerificationPort` is mocked**, so los's outbound REST adapters and their **resilience4j circuit-breaker / retry / fallback behaviour are NOT exercised** — a green canary says nothing about them. They need their own test. |
-| `notification-service` | *this commit* | **Kafka-header→RLS isolation**, not JWT→RLS — a distinct claim. notification has **no HTTP surface**; its tenant arrives on the Kafka `tenant_id` header via `TenantRecordInterceptor` (`NotificationRlsKafkaIsolationIntegrationTest`, CI 3/3). Deliberately **no OAuth2 opt-in** — a `JwtDecoder` with nothing to decode would be dead config. Channel dispatch is stubbed by the seeded templates only; the real SMS/email senders are unexercised. |
+| `notification-service` | `4c55123` | **Kafka-header→RLS isolation**, not JWT→RLS — a distinct claim. notification has **no HTTP surface**; its tenant arrives on the Kafka `tenant_id` header via `TenantRecordInterceptor` (`NotificationRlsKafkaIsolationIntegrationTest`, CI 3/3). Deliberately **no OAuth2 opt-in** — a `JwtDecoder` with nothing to decode would be dead config. Channel dispatch is stubbed by the seeded templates only; the real SMS/email senders are unexercised. |
+| `bre-service` | *this commit* | JWT→RLS isolation over **rule reads** — a read-only evaluator (no writes, no outbox, no GET-back), so the proof is a decision contrast (alice `APPROVED` vs bob `REFER`) plus a datasource check that `originex_app` sees only its tenant's rule sets (`BreRlsJwtIsolationIntegrationTest`, CI 4/4). **Required a correctness fix first (`4777459`) — see the severity note below.** The rule-authoring HTTP surface is not exercised (rules are seeded via the owner). |
 
-The remaining three are dark. RLS is not yet enabled in any **deployment** —
+The remaining two are dark. RLS is not yet enabled in any **deployment** —
 `infra/helm` sets no profile.
+
+> **Severity note — `4777459` is a different class of bug from the others.** Most
+> per-service fixes in this rollout were **availability** failures caught by
+> booting: a service that would not start (payment's `CHAR(3)`, the missing
+> outbox/inbox tables, bre's `KafkaTemplate`) or returned a wrong status code
+> (ledger/payment/los not-found → 404). bre's `evaluate()` missing `@Transactional`
+> was a **correctness** failure: the service booted, returned HTTP 200, and
+> **silently produced wrong business decisions** — under RLS the tenant session
+> variable was never set, so every rule read saw nothing and every loan evaluation
+> returned `REFER_TO_UNDERWRITER` regardless of the applicant or the configured
+> rules. It would have passed any test that only checked "did the request succeed."
+> Found only by asserting the *decision value* under RLS, not the HTTP status. Weight
+> it accordingly: a service silently returning wrong answers is more dangerous than
+> one that fails loudly, and the rollout's remaining services should be checked for
+> the same class of gap (non-transactional reads under RLS), not just for booting.
 
 > Note the two claim shapes. Four canaries prove **JWT→RLS** over HTTP (tenant
 > from a verified bearer claim via `TenantClaimResolutionFilter`).
