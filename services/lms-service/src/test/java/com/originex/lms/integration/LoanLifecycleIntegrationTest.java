@@ -1,7 +1,10 @@
 package com.originex.lms.integration;
 
+import com.originex.common.tenant.TenantContext;
+import com.originex.common.tenant.TenantContextHolder;
 import com.originex.lms.application.port.in.LoanUseCase;
 import com.originex.lms.application.service.InterestAccrualService;
+import com.originex.testsupport.rls.RlsPostgresSupport;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -11,10 +14,12 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -41,6 +46,24 @@ import static org.awaitility.Awaitility.await;
  *
  * <p>Run locally with: {@code mvn -s dev/settings.xml -pl services/lms-service -am
  * verify -Pintegration-test}. Runs in CI via {@code mvn verify -Pintegration-test}.
+ *
+ * <p><b>Runs under the {@code rls} profile</b> (the service is enabled under RLS), so
+ * the app connects as {@code originex_app} (NOBYPASSRLS). That changes how the test
+ * touches the database:
+ * <ul>
+ *   <li>The consumer path is unaffected — events carry the {@code tenant_id} header and
+ *       {@code TenantRecordInterceptor} sets the tenant before each consumer transaction
+ *       (wiring proven by {@code LmsRlsConsumerAndSchedulerIntegrationTest}).</li>
+ *   <li>The test's own reads and setup writes go through an <b>owner</b> (BYPASSRLS)
+ *       {@link JdbcTemplate}, not the app datasource: this is a lifecycle-<i>mechanics</i>
+ *       test that must observe and manipulate rows across the flow regardless of tenant
+ *       context. Isolation itself is the sibling test's job.</li>
+ *   <li>The scheduler calls route to the system (BYPASSRLS) role internally, unchanged.</li>
+ *   <li>The one direct app-path call, {@code recordRepayment}, is wrapped in
+ *       {@link TenantContextHolder} so the RLS transaction manager sets {@code app.tenant_id}
+ *       — exactly what the HTTP filter / Kafka interceptor do in production. Verified by
+ *       observation before this migration.</li>
+ * </ul>
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
@@ -56,17 +79,16 @@ import static org.awaitility.Awaitility.await;
                 // Don't fail context load validating group membership.
                 "management.endpoint.health.validate-group-membership=false"
         })
+@ActiveProfiles("rls")
 @Testcontainers
-@DisplayName("LMS loan lifecycle — disbursement → active → accrual → repayment (Testcontainers)")
+@Tag("rls")
+@DisplayName("LMS loan lifecycle — disbursement → active → accrual → repayment, under RLS (Testcontainers)")
 class LoanLifecycleIntegrationTest {
 
     private static final String TENANT = "00000000-0000-0000-0000-000000000001";
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("originex_lms")
-            .withUsername("originex")
-            .withPassword("originex_local");
+    static final PostgreSQLContainer<?> POSTGRES = RlsPostgresSupport.newContainer("originex_lms");
 
     @Container
     static final ConfluentKafkaContainer KAFKA =
@@ -82,7 +104,14 @@ class LoanLifecycleIntegrationTest {
 
     private static KafkaProducer<String, byte[]> producer;
 
-    @Autowired JdbcTemplate jdbc;
+    /**
+     * The test's own DB access runs as the owner (BYPASSRLS) — see the class javadoc.
+     * Not {@code @Autowired}: under the rls profile the app's routing datasource
+     * connects as {@code originex_app}, which would see nothing without a tenant
+     * context bound on this thread.
+     */
+    private static JdbcTemplate jdbc;
+
     @Autowired LoanUseCase loanUseCase;
     @Autowired InterestAccrualService accrual;
     @Autowired com.originex.lms.application.service.DpdAgingService dpdAging;
@@ -93,6 +122,7 @@ class LoanLifecycleIntegrationTest {
                 ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
                 ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName(),
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName()));
+        jdbc = new JdbcTemplate(RlsPostgresSupport.ownerDataSource(POSTGRES));
     }
 
     @AfterAll
@@ -159,8 +189,15 @@ class LoanLifecycleIntegrationTest {
         assertThat(outstandingInterest(loanId)).isEqualByComparingTo(afterFirst);
 
         // ── 5. Repayment reachable on an ACTIVE loan (would have thrown 'not active' on CREATED) ──
-        loanUseCase.recordRepayment(new LoanUseCase.RecordRepaymentCommand(
-                UUID.fromString(TENANT), loanId, "10000", "INR", "PAY-REPAY-1"));
+        // Direct app-path call: bind the tenant so the RLS transaction manager sets
+        // app.tenant_id (the HTTP filter / Kafka interceptor do this in production).
+        TenantContextHolder.set(TenantContext.of(TENANT, TENANT));
+        try {
+            loanUseCase.recordRepayment(new LoanUseCase.RecordRepaymentCommand(
+                    UUID.fromString(TENANT), loanId, "10000", "INR", "PAY-REPAY-1"));
+        } finally {
+            TenantContextHolder.clear();
+        }
         assertThat(outboxPayload("originex.lms.RepaymentAllocated")).contains(loanId.toString());
         // repayment settled the schedule: the oldest installment now shows paid amounts
         assertThat(jdbc.queryForObject(
