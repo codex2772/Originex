@@ -15,7 +15,7 @@
 | Core workflow completeness | **60** | Happy-path loan lifecycle runs (sandbox); collections + payment-failure depth + reporting missing |
 | Database maturity | **85** | Per-service schemas, 57 indexes, RLS policies (`WITH CHECK` + fail-closed), ledger monthly partitions; **no soft-deletes**, audit fields partial |
 | Kafka/event maturity | **65** | Transactional outbox + inbox idempotency solid; **no DLQ/error-handler in code**; 3 domains don't publish; ledger events unconsumed |
-| Security maturity | **35** | Auth built but on no service classpath, no IdP; **zero `@PreAuthorize`**; RLS off; plaintext Kafka; dev secrets in yaml; no CORS |
+| Security maturity | **35** | Auth built and opted in on **7/8 services' classpaths** (oauth2 resource-server; notification excluded — no HTTP surface), but `security.enabled=false` everywhere and no IdP; **zero `@PreAuthorize`**; RLS off; plaintext Kafka; dev secrets in yaml; no CORS |
 | Multi-tenancy / RLS maturity | **90** | Complete + tested; roles provisioned in dev; **enabled (config + CI-proven) on all 8 services** as of 2026-07-18 — but still **dark in every deployment** (`infra/helm` sets no profile). See Phase 2. |
 | Testing maturity | **55** | 47 starter unit tests + RLS Testcontainers harness (3 ITs) **run in CI**; no e2e/contract/perf; partner=0 tests |
 | Infrastructure maturity | **50** | Helm (probes/HPA/rolling), Terraform (vpc/eks/rds/redis), Jib images, Strimzi topics, CI with Testcontainers — but **no observed deploy**, no IdP, secrets externalization [UNVERIFIED] |
