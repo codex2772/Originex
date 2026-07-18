@@ -34,10 +34,14 @@ active everywhere it runs:
 | `payment-service` | `d295293` | isolation **and** the transactional outbox *write* on the RLS datasource (CI 4/4). The outbox row is written and typed correctly (`jsonb`); whether the poller reliably **publishes** it downstream is a separate, currently open question (KI-8). Callback/inbound paths unexercised; its `Location` header is broken (KI-7). |
 | `los-service` | `4b9ac9d` | isolation **and** the outbox *write* (CI 4/4) — row written and typed correctly; downstream **publication** is the separate open question in KI-8. **`CustomerVerificationPort` is mocked**, so los's outbound REST adapters and their **resilience4j circuit-breaker / retry / fallback behaviour are NOT exercised** — a green canary says nothing about them. They need their own test. |
 | `notification-service` | `4c55123` | **Kafka-header→RLS isolation**, not JWT→RLS — a distinct claim. notification has **no HTTP surface**; its tenant arrives on the Kafka `tenant_id` header via `TenantRecordInterceptor` (`NotificationRlsKafkaIsolationIntegrationTest`, CI 3/3). Deliberately **no OAuth2 opt-in** — a `JwtDecoder` with nothing to decode would be dead config. Channel dispatch is stubbed by the seeded templates only; the real SMS/email senders are unexercised. |
-| `bre-service` | *this commit* | JWT→RLS isolation over **rule reads** — a read-only evaluator (no writes, no outbox, no GET-back), so the proof is a decision contrast (alice `APPROVED` vs bob `REFER`) plus a datasource check that `originex_app` sees only its tenant's rule sets (`BreRlsJwtIsolationIntegrationTest`, CI 4/4). **Required a correctness fix first (`4777459`) — see the severity note below.** The rule-authoring HTTP surface is not exercised (rules are seeded via the owner). |
+| `bre-service` | `70eeaee` | JWT→RLS isolation over **rule reads** — a read-only evaluator (no writes, no outbox, no GET-back), so the proof is a decision contrast (alice `APPROVED` vs bob `REFER`) plus a datasource check that `originex_app` sees only its tenant's rule sets (`BreRlsJwtIsolationIntegrationTest`, CI 4/4). **Required a correctness fix first (`4777459`) — see the severity note below.** The rule-authoring HTTP surface is not exercised (rules are seeded via the owner). |
+| `partner-integration-service` | *this commit* | **Write-side** JWT→RLS isolation — the only canary that asserts a persisted row rather than a read-back (there is no GET endpoint). A verify persists an `integration_requests` row under the caller's tenant; the proof is datasource isolation plus **WITH CHECK** (a spoofed `X-Tenant-Id` still stamps the row with the JWT's tenant, not the header's) (`PartnerRlsJwtIsolationIntegrationTest`, CI 3/3). Only the credit-bureau path caches and it is unexercised; sandbox adapters, so live partner integrations are unexercised. |
 
-The remaining two are dark. RLS is not yet enabled in any **deployment** —
-`infra/helm` sets no profile.
+**All eight services are enabled — the Phase 2 canary rollout (Commit 3) is
+complete.** RLS is still enabled in **no deployment**: `infra/helm` sets no
+profile, so this is config + tests only. Turning it on in a deployed environment
+(setting `SPRING_PROFILES_ACTIVE` to include `rls`, with the roles + pgcrypto
+provisioned by DBA/IaC) remains outstanding and closes Phase 2.
 
 > **Severity note — `4777459` is a different class of bug from the others.** Most
 > per-service fixes in this rollout were **availability** failures caught by
