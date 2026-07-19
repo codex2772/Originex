@@ -297,6 +297,7 @@ spec:
     retention.ms: "2592000000"      # 30 days
     cleanup.policy: delete
     compression.type: lz4
+    min.insync.replicas: "2"        # DLQ send uses acks=all — must be durably replicated before source offset advances
 ---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
@@ -314,3 +315,44 @@ spec:
     retention.ms: "2592000000"      # 30 days
     cleanup.policy: delete
     compression.type: lz4
+    min.insync.replicas: "2"        # DLQ send uses acks=all — must be durably replicated before source offset advances
+---
+# los.applications.events.dlq — strict DLQ for lms DisbursementRequestedConsumer
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.los.applications.events.dlq
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: los
+    type: dlq
+spec:
+  partitions: 8
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"        # DLQ send uses acks=all — must be durably replicated before source offset advances
+---
+# notifications.deadletter.dlq — single lenient DLQ for the cross-topic notification consumer
+# (originex.customer.customers.events, originex.los.applications.events,
+#  originex.lms.loans.events, originex.payments.orders.events)
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: originex.notifications.deadletter.dlq
+  namespace: originex-data
+  labels:
+    strimzi.io/cluster: originex-kafka
+    domain: notifications
+    type: dlq
+spec:
+  partitions: 8
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days
+    cleanup.policy: delete
+    compression.type: lz4
+    min.insync.replicas: "2"        # DLQ send uses acks=all — must be durably replicated before source offset advances

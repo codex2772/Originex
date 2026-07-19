@@ -49,6 +49,8 @@
         <!-- Real Kafka broker for the lms→ledger consumer seam IT (LedgerLmsEventConsumerIntegrationTest). -->
         <dependency><groupId>org.testcontainers</groupId><artifactId>kafka</artifactId><scope>test</scope></dependency>
         <dependency><groupId>org.awaitility</groupId><artifactId>awaitility</artifactId><scope>test</scope></dependency>
+        <!-- EmbeddedKafka for the Phase 4 error-handling / DLQ regression + observation tests. -->
+        <dependency><groupId>org.springframework.kafka</groupId><artifactId>spring-kafka-test</artifactId><scope>test</scope></dependency>
     </dependencies>
 
     <build>

@@ -4,6 +4,7 @@ import com.originex.common.tenant.TenantContext;
 import com.originex.common.tenant.TenantContextHolder;
 import com.originex.lms.application.port.in.LoanUseCase;
 import com.originex.lms.application.port.in.LoanUseCase.CreateLoanCommand;
+import com.originex.starter.kafka.KafkaEventEnvelope;
 import com.originex.starter.outbox.InboxEventJpaEntity;
 import com.originex.starter.outbox.InboxEventRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,6 +22,10 @@ import java.util.UUID;
 /**
  * Kafka consumer for LOS events — triggers loan creation on DisbursementRequested.
  * Implements inbox idempotency pattern.
+ *
+ * <p>Payload/header defects surface as {@link com.originex.starter.kafka.PoisonEventException}
+ * (via {@link KafkaEventEnvelope}) and are routed straight to the DLQ; transient failures propagate
+ * and are retried by the shared error handler.
  */
 @Component
 public class DisbursementRequestedConsumer {
@@ -46,53 +51,47 @@ public class DisbursementRequestedConsumer {
     )
     @Transactional
     public void handleDisbursementRequested(ConsumerRecord<String, byte[]> record) {
-        String eventId = extractHeader(record, "event_id");
-        String tenantId = extractHeader(record, "tenant_id");
-        String eventType = extractHeader(record, "event_type");
+        String eventType = KafkaEventEnvelope.requireHeader(record, "event_type");
 
         // Only process DisbursementRequested events
         if (!"originex.los.DisbursementRequested".equals(eventType)) {
             return;
         }
 
-        if (eventId == null || tenantId == null) {
-            log.warn("Missing required headers, skipping. offset={}", record.offset());
-            return;
-        }
-
-        UUID eventUuid = UUID.fromString(eventId);
+        UUID eventUuid = KafkaEventEnvelope.requireUuidHeader(record, "event_id");
+        String tenantId = KafkaEventEnvelope.requireHeader(record, "tenant_id");
 
         // Inbox idempotency check
         if (inboxRepository.existsById(eventUuid)) {
-            log.debug("Duplicate DisbursementRequested, skipping: eventId={}", eventId);
+            log.debug("Duplicate DisbursementRequested, skipping: eventId={}", eventUuid);
             return;
         }
 
-        log.info("Processing DisbursementRequested: eventId={}", eventId);
+        log.info("Processing DisbursementRequested: eventId={}", eventUuid);
 
         try {
             TenantContextHolder.set(TenantContext.of(tenantId, tenantId));
             MDC.put("tenantId", tenantId);
-            MDC.put("eventId", eventId);
+            MDC.put("eventId", eventUuid.toString());
 
             // Deserialize payload
-            JsonNode json = objectMapper.readTree(record.value());
+            JsonNode json = KafkaEventEnvelope.readJson(objectMapper, record);
 
             CreateLoanCommand command = new CreateLoanCommand(
                     UUID.fromString(tenantId),
-                    UUID.fromString(json.get("customer_id").asText()),
-                    UUID.fromString(json.get("application_id").asText()),
-                    json.get("product_code").asText(),
-                    json.get("sanctioned_amount").asText(),
-                    json.get("interest_rate").asText(),
-                    json.has("rate_type") ? json.get("rate_type").asText() : "FIXED",
-                    json.get("tenure_months").asInt(),
-                    json.get("emi").asText(),
-                    json.has("currency") ? json.get("currency").asText() : "INR",
-                    json.has("beneficiary_account") ? json.get("beneficiary_account").asText() : null,
-                    json.has("beneficiary_ifsc") ? json.get("beneficiary_ifsc").asText() : null,
-                    json.has("beneficiary_name") ? json.get("beneficiary_name").asText() : null,
-                    json.has("beneficiary_bank") ? json.get("beneficiary_bank").asText() : null
+                    KafkaEventEnvelope.requiredUuid(json, "customer_id"),
+                    KafkaEventEnvelope.requiredUuid(json, "application_id"),
+                    KafkaEventEnvelope.requiredText(json, "product_code"),
+                    KafkaEventEnvelope.requiredText(json, "sanctioned_amount"),
+                    KafkaEventEnvelope.requiredText(json, "interest_rate"),
+                    KafkaEventEnvelope.optionalText(json, "rate_type", "FIXED"),
+                    Integer.parseInt(KafkaEventEnvelope.requiredText(json, "tenure_months")),
+                    KafkaEventEnvelope.requiredText(json, "emi"),
+                    KafkaEventEnvelope.optionalText(json, "currency", "INR"),
+                    KafkaEventEnvelope.optionalText(json, "beneficiary_account", null),
+                    KafkaEventEnvelope.optionalText(json, "beneficiary_ifsc", null),
+                    KafkaEventEnvelope.optionalText(json, "beneficiary_name", null),
+                    KafkaEventEnvelope.optionalText(json, "beneficiary_bank", null)
             );
 
             loanUseCase.createLoan(command);
@@ -100,20 +99,12 @@ public class DisbursementRequestedConsumer {
             // Mark in inbox as processed
             inboxRepository.save(InboxEventJpaEntity.of(eventUuid, eventType));
 
-            log.info("Loan created from DisbursementRequested: eventId={}", eventId);
+            log.info("Loan created from DisbursementRequested: eventId={}", eventUuid);
 
-        } catch (Exception e) {
-            log.error("Failed to process DisbursementRequested: eventId={}", eventId, e);
-            throw new RuntimeException("Failed to process DisbursementRequested", e);
         } finally {
             TenantContextHolder.clear();
             MDC.remove("tenantId");
             MDC.remove("eventId");
         }
-    }
-
-    private String extractHeader(ConsumerRecord<String, byte[]> record, String key) {
-        var header = record.headers().lastHeader(key);
-        return header != null ? new String(header.value()) : null;
     }
 }

@@ -8,6 +8,7 @@ import com.originex.ledger.application.port.in.LedgerUseCase.PostJournalEntryCom
 import com.originex.ledger.application.port.in.LedgerUseCase.PostingLine;
 import com.originex.ledger.application.port.out.AccountRepository;
 import com.originex.ledger.domain.model.Account;
+import com.originex.starter.kafka.KafkaEventEnvelope;
 import com.originex.starter.outbox.InboxEventJpaEntity;
 import com.originex.starter.outbox.InboxEventRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -36,7 +37,10 @@ import java.util.UUID;
  *   <li>InterestAccrued → DR Interest Receivable, CR Interest Income (accrued)</li>
  * </ul>
  *
- * <p>Implements inbox idempotency — events with duplicate IDs are skipped.
+ * <p>Implements inbox idempotency — events with duplicate IDs are skipped. Payload/header defects
+ * surface as {@link com.originex.starter.kafka.PoisonEventException} (via {@link KafkaEventEnvelope})
+ * and are routed straight to the DLQ; transient failures propagate and are retried by the shared
+ * error handler.
  */
 @Component
 public class LmsEventConsumer {
@@ -74,44 +78,37 @@ public class LmsEventConsumer {
     )
     @Transactional
     public void handleLmsEvent(ConsumerRecord<String, byte[]> record) {
-        String eventId = extractHeader(record, "event_id");
-        String eventType = extractHeader(record, "event_type");
-        String tenantId = extractHeader(record, "tenant_id");
-
-        if (eventId == null || eventType == null || tenantId == null) {
-            log.warn("Missing required headers on LMS event, skipping. offset={}", record.offset());
-            return;
-        }
-
-        UUID eventUuid = UUID.fromString(eventId);
+        String eventType = KafkaEventEnvelope.requireHeader(record, "event_type");
+        UUID eventUuid = KafkaEventEnvelope.requireUuidHeader(record, "event_id");
+        String tenantId = KafkaEventEnvelope.requireHeader(record, "tenant_id");
 
         // Inbox idempotency check
         if (inboxRepository.existsById(eventUuid)) {
-            log.debug("Duplicate event detected, skipping: eventId={}", eventId);
+            log.debug("Duplicate event detected, skipping: eventId={}", eventUuid);
             return;
         }
 
         try {
             TenantContextHolder.set(TenantContext.of(tenantId, tenantId));
             MDC.put("tenantId", tenantId);
-            MDC.put("eventId", eventId);
+            MDC.put("eventId", eventUuid.toString());
 
             switch (eventType) {
-                case "originex.lms.LoanDisbursed" -> handleLoanDisbursed(tenantId, record.value());
-                case "originex.lms.RepaymentAllocated" -> handleRepaymentAllocated(tenantId, record.value());
-                case "originex.lms.InterestAccrued" -> handleInterestAccrued(tenantId, record.value());
-                default -> log.debug("Ignoring unhandled event type: {}", eventType);
+                case "originex.lms.LoanDisbursed" ->
+                        handleLoanDisbursed(tenantId, KafkaEventEnvelope.readJson(objectMapper, record));
+                case "originex.lms.RepaymentAllocated" ->
+                        handleRepaymentAllocated(tenantId, KafkaEventEnvelope.readJson(objectMapper, record));
+                case "originex.lms.InterestAccrued" ->
+                        handleInterestAccrued(tenantId, KafkaEventEnvelope.readJson(objectMapper, record));
+                default -> {
+                    log.debug("Ignoring unhandled event type: {}", eventType);
+                    return; // not our event — do not record in inbox
+                }
             }
 
             // Mark as processed in inbox
             inboxRepository.save(InboxEventJpaEntity.of(eventUuid, eventType));
 
-        } catch (RuntimeException e) {
-            log.error("Failed to process LMS event: eventId={}, type={}", eventId, eventType, e);
-            throw e; // Kafka will retry
-        } catch (Exception e) {
-            log.error("Failed to process LMS event: eventId={}, type={}", eventId, eventType, e);
-            throw new RuntimeException("Failed to process LMS event: " + eventId, e);
         } finally {
             TenantContextHolder.clear();
             MDC.remove("tenantId");
@@ -122,11 +119,10 @@ public class LmsEventConsumer {
     /**
      * LoanDisbursed → DR Loan Receivable, CR Pool Account
      */
-    private void handleLoanDisbursed(String tenantId, byte[] payload) throws Exception {
-        JsonNode json = objectMapper.readTree(payload);
-        String loanId = json.get("loan_id").asText();
-        String amount = json.get("amount").asText();
-        String currency = json.has("currency") ? json.get("currency").asText() : "INR";
+    private void handleLoanDisbursed(String tenantId, JsonNode json) {
+        String loanId = KafkaEventEnvelope.requiredText(json, "loan_id");
+        String amount = KafkaEventEnvelope.requiredText(json, "amount");
+        String currency = KafkaEventEnvelope.optionalText(json, "currency", "INR");
 
         // Resolve loan-specific receivable account (or create if first disbursement)
         UUID loanReceivableId = resolveLoanReceivableAccount(tenantId, loanId, currency);
@@ -152,12 +148,11 @@ public class LmsEventConsumer {
     /**
      * RepaymentAllocated → DR Cash, CR Loan Receivable (principal), CR Interest Income (interest)
      */
-    private void handleRepaymentAllocated(String tenantId, byte[] payload) throws Exception {
-        JsonNode json = objectMapper.readTree(payload);
-        String loanId = json.get("loan_id").asText();
-        String principal = json.get("principal").asText();
-        String interest = json.get("interest").asText();
-        String currency = json.has("currency") ? json.get("currency").asText() : "INR";
+    private void handleRepaymentAllocated(String tenantId, JsonNode json) {
+        String loanId = KafkaEventEnvelope.requiredText(json, "loan_id");
+        String principal = KafkaEventEnvelope.requiredText(json, "principal");
+        String interest = KafkaEventEnvelope.requiredText(json, "interest");
+        String currency = KafkaEventEnvelope.optionalText(json, "currency", "INR");
 
         UUID loanReceivableId = resolveLoanReceivableAccount(tenantId, loanId, currency);
         Money principalMoney = Money.of(principal, currency);
@@ -195,11 +190,10 @@ public class LmsEventConsumer {
     /**
      * InterestAccrued → DR Interest Receivable, CR Interest Income (Accrued)
      */
-    private void handleInterestAccrued(String tenantId, byte[] payload) throws Exception {
-        JsonNode json = objectMapper.readTree(payload);
-        String loanId = json.get("loan_id").asText();
-        String amount = json.get("accrued_amount").asText();
-        String currency = json.has("currency") ? json.get("currency").asText() : "INR";
+    private void handleInterestAccrued(String tenantId, JsonNode json) {
+        String loanId = KafkaEventEnvelope.requiredText(json, "loan_id");
+        String amount = KafkaEventEnvelope.requiredText(json, "accrued_amount");
+        String currency = KafkaEventEnvelope.optionalText(json, "currency", "INR");
 
         PostJournalEntryCommand command = new PostJournalEntryCommand(
                 UUID.fromString(tenantId),
@@ -238,10 +232,5 @@ public class LmsEventConsumer {
         Account saved = accountRepository.save(account);
         log.info("Auto-created loan receivable account: {}", accountNumber);
         return saved.getAccountId();
-    }
-
-    private String extractHeader(ConsumerRecord<String, byte[]> record, String key) {
-        var header = record.headers().lastHeader(key);
-        return header != null ? new String(header.value()) : null;
     }
 }
