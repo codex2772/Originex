@@ -76,6 +76,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("rls")
 @Testcontainers
 @Tag("rls")
+@Tag("keycloak")
 @DisplayName("BRE evaluate — RLS tenant isolation over rule reads, driven by verified JWT claims (Testcontainers)")
 class BreRlsJwtIsolationIntegrationTest {
 

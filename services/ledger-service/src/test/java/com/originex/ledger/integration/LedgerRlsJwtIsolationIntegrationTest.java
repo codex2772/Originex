@@ -69,6 +69,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("rls")
 @Testcontainers
 @Tag("rls")
+@Tag("keycloak")
 @DisplayName("Ledger HTTP path — RLS tenant isolation driven by verified JWT claims (Testcontainers)")
 class LedgerRlsJwtIsolationIntegrationTest {
 

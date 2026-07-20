@@ -68,6 +68,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("rls")
 @Testcontainers
 @Tag("rls")
+@Tag("keycloak")
 @DisplayName("Partner-integration verify — write-side RLS isolation driven by verified JWT claims (Testcontainers)")
 class PartnerRlsJwtIsolationIntegrationTest {
 

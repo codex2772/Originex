@@ -84,6 +84,7 @@ import static org.mockito.Mockito.when;
 @ActiveProfiles("rls")
 @Testcontainers
 @Tag("rls")
+@Tag("keycloak")
 @DisplayName("LOS HTTP path — RLS tenant isolation driven by verified JWT claims (Testcontainers)")
 class LosRlsJwtIsolationIntegrationTest {
 
