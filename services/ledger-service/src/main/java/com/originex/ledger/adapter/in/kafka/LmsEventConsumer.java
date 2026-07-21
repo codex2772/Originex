@@ -2,7 +2,8 @@ package com.originex.ledger.adapter.in.kafka;
 
 import com.originex.common.money.Money;
 import com.originex.common.tenant.TenantContext;
-import com.originex.common.tenant.TenantContextHolder;
+import com.originex.starter.security.MachineActorContext;
+import com.originex.starter.security.OriginexScopes;
 import com.originex.ledger.application.port.in.LedgerUseCase;
 import com.originex.ledger.application.port.in.LedgerUseCase.PostJournalEntryCommand;
 import com.originex.ledger.application.port.in.LedgerUseCase.PostingLine;
@@ -89,7 +90,9 @@ public class LmsEventConsumer {
         }
 
         try {
-            TenantContextHolder.set(TenantContext.of(tenantId, tenantId));
+            // Tenant identity (RLS) + a minimal machine authorization (ledger:post only) established
+            // together, one lifecycle, cleared together in the finally — see MachineActorContext.
+            MachineActorContext.establish(TenantContext.of(tenantId, tenantId), OriginexScopes.LEDGER_POST);
             MDC.put("tenantId", tenantId);
             MDC.put("eventId", eventUuid.toString());
 
@@ -110,7 +113,7 @@ public class LmsEventConsumer {
             inboxRepository.save(InboxEventJpaEntity.of(eventUuid, eventType));
 
         } finally {
-            TenantContextHolder.clear();
+            MachineActorContext.clear();
             MDC.remove("tenantId");
             MDC.remove("eventId");
         }

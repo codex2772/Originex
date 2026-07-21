@@ -204,9 +204,12 @@ class PaymentRlsJwtIsolationIntegrationTest {
     // ── helpers ──
 
     private static String token(String username) {
-        // No scopes requested: payment has no @PreAuthorize, and tenant_id rides on the
-        // originex-tenant default client scope.
-        return KeycloakSupport.passwordToken(KEYCLOAK, WEB_CLIENT, username, PASSWORD, "openid");
+        // payments:disburse (POST /v1/payments/disbursements) + payments:read (read-back) so the caller
+        // passes the port's @PreAuthorize under ENFORCED; tenant_id still rides on originex-tenant.
+        return KeycloakSupport.passwordToken(KEYCLOAK, WEB_CLIENT, username, PASSWORD,
+                "openid",
+                com.originex.starter.security.OriginexScopes.PAYMENTS_READ,
+                com.originex.starter.security.OriginexScopes.PAYMENTS_DISBURSE);
     }
 
     /** Initiates a disbursement as the token's tenant and returns the new order's id. */
