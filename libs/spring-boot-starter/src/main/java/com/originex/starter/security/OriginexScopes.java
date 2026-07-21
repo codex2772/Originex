@@ -40,6 +40,14 @@ public final class OriginexScopes {
     // Ledger
     public static final String LEDGER_READ = "ledger:read";
     public static final String LEDGER_POST = "ledger:post";
+    /**
+     * Reversing an already-committed journal entry is a corrective/exceptional action — a higher
+     * privilege than routine posting — so it carries its own scope rather than folding into
+     * {@link #LEDGER_POST}. This is the platform precedent: corrective/exceptional operations get a
+     * distinct scope (e.g. a future {@code payments:refund}, {@code applications:override}). The
+     * machine/consumer path only ever posts, never reverses, so it is never granted this authority.
+     */
+    public static final String LEDGER_REVERSE = "ledger:reverse";
 
     // Collections
     public static final String COLLECTIONS_READ = "collections:read";
