@@ -31,6 +31,11 @@ import java.util.UUID;
  * <p>The consumer is idempotent — duplicate events are silently skipped.
  * No inbox table needed here because the application service handles deduplication
  * via sourceEventId.
+ *
+ * <p>This is a side-effect consumer: it runs on the lenient
+ * {@code sideEffectKafkaListenerContainerFactory} (0 Kafka retries → single
+ * {@code originex.notifications.deadletter.dlq}), so a dispatch failure is dead-lettered
+ * visibly rather than silently dropped, and never blocks business consumers.
  */
 @Component
 public class DomainEventNotificationConsumer {
@@ -57,7 +62,7 @@ public class DomainEventNotificationConsumer {
                     "originex.payments.orders.events"
             },
             groupId = "notification-event-consumer",
-            containerFactory = "kafkaListenerContainerFactory"
+            containerFactory = "sideEffectKafkaListenerContainerFactory"
     )
     @Transactional
     public void handle(ConsumerRecord<String, byte[]> record) {
@@ -103,9 +108,12 @@ public class DomainEventNotificationConsumer {
                     variables
             ));
 
-        } catch (Exception e) {
-            log.error("Failed to process notification for eventId={}, type={}", eventId, eventType, e);
-            // Do NOT rethrow — notification failures should not block business events
+            // Failures are no longer swallowed: an unexpected dispatch error now propagates to the
+            // lenient (side-effect) error handler → 0 retries → notification DLQ. This consumer runs
+            // in its own group, so a failure here never blocks business consumers. Retry budget is 0
+            // deliberately — transient gateway blips are handled inside dispatch() (markFailed + the
+            // app-level retry poller); a Kafka retry would only re-attempt the class of failure that
+            // can double-send an already-sent notification (see KI-11).
         } finally {
             MDC.remove("tenantId");
             MDC.remove("eventId");

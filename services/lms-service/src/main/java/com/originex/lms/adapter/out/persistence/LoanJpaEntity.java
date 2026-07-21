@@ -3,6 +3,7 @@ package com.originex.lms.adapter.out.persistence;
 import com.originex.common.money.Money;
 import com.originex.lms.domain.model.*;
 import jakarta.persistence.*;
+import org.hibernate.Hibernate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -86,6 +87,9 @@ public class LoanJpaEntity {
     @Column(name = "last_payment_date")
     private LocalDate lastPaymentDate;
 
+    @Column(name = "last_accrual_date")
+    private LocalDate lastAccrualDate;
+
     @Column(name = "dpd", nullable = false)
     private int dpd;
 
@@ -138,6 +142,7 @@ public class LoanJpaEntity {
         e.maturityDate = loan.getMaturityDate();
         e.nextDueDate = loan.getNextDueDate();
         e.lastPaymentDate = loan.getLastPaymentDate();
+        e.lastAccrualDate = loan.getLastAccrualDate();
         e.dpd = loan.getDpd();
         e.maxDpd = loan.getMaxDpd();
         e.assetClassification = loan.getAssetClassification();
@@ -178,20 +183,42 @@ public class LoanJpaEntity {
         loan.setCurrency(currency);
         loan.setMaturityDate(maturityDate);
         loan.setNextDueDate(nextDueDate);
+        loan.setLastPaymentDate(lastPaymentDate);
+        loan.setLastAccrualDate(lastAccrualDate);
         loan.setDpd(dpd);
         loan.setMaxDpd(maxDpd);
         loan.setAssetClassification(assetClassification);
         loan.setVersion(version);
         loan.setCreatedAt(createdAt);
         loan.setUpdatedAt(updatedAt);
-        loan.setInstallments(new ArrayList<>());
-        loan.setDisbursements(new ArrayList<>());
+
+        // Child collections are LAZY. Map them only when the caller initialized
+        // them (transactional read paths do so via the adapter); otherwise leave
+        // them empty rather than trigger a LazyInitializationException — e.g. the
+        // accrual scheduler maps loans outside a transaction and does not need them.
+        List<Installment> mappedInstallments = new ArrayList<>();
+        if (Hibernate.isInitialized(installments)) {
+            installments.forEach(i -> mappedInstallments.add(i.toDomain(currency)));
+        }
+        loan.setInstallments(mappedInstallments);
+
+        List<Disbursement> mappedDisbursements = new ArrayList<>();
+        if (Hibernate.isInitialized(disbursements)) {
+            disbursements.forEach(d -> mappedDisbursements.add(d.toDomain(currency)));
+        }
+        loan.setDisbursements(mappedDisbursements);
+
         loan.setCharges(new ArrayList<>());
         return loan;
     }
 
     public UUID getLoanId() { return loanId; }
     public UUID getTenantId() { return tenantId; }
+
+    // Exposed so the persistence adapter can force-initialize the LAZY child
+    // collections within an open transaction before mapping to the domain.
+    List<InstallmentJpaEntity> getInstallmentEntities() { return installments; }
+    List<DisbursementJpaEntity> getDisbursementEntities() { return disbursements; }
 
     protected LoanJpaEntity() {}
 }

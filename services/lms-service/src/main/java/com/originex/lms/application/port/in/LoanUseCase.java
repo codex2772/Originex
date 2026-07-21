@@ -32,7 +32,11 @@ public interface LoanUseCase {
             String rateType,
             int tenureMonths,
             String emiAmount,
-            String currency
+            String currency,
+            String beneficiaryAccount,
+            String beneficiaryIfsc,
+            String beneficiaryName,
+            String beneficiaryBank
     ) {}
 
     record RecordRepaymentCommand(

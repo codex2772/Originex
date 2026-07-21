@@ -65,7 +65,11 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8081:8081"
+      # Host port moved to 8090 to avoid colliding with customer-service
+      # (server.port: 8081) — container keeps listening on 8081 internally,
+      # unchanged, so Docker-internal traffic (e.g. kafka-ui's
+      # KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081) is unaffected.
+      - "8090:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092

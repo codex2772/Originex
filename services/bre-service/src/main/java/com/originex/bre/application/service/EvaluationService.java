@@ -10,6 +10,7 @@ import com.originex.bre.domain.model.EvaluationResult.RuleResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -46,6 +47,7 @@ public class EvaluationService implements EvaluationUseCase {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public EvaluationResult evaluate(EvaluateCommand cmd) {
         log.info("BRE evaluation: applicationId={}, product={}, employment={}, creditScore={}",
                 cmd.applicationId(), cmd.productCode(), cmd.employmentType(), cmd.creditScore());

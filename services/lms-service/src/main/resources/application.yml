@@ -1,6 +1,18 @@
 spring:
   application:
     name: lms-service
+  # RLS enablement — the eighth and last service. lms's RLS wiring (Kafka consumer
+  # isolation + cross-tenant scheduler) was proven earlier by
+  # LmsRlsConsumerAndSchedulerIntegrationTest; this flip enables the service itself.
+  # "rls" is additive (e.g. SPRING_PROFILES_ACTIVE=prod → prod,rls) and loads
+  # application-rls.yml from the starter, which routes the runtime path through
+  # originex_app (NOBYPASSRLS) and Flyway through originex_owner. See
+  # dev/RLS_ENABLEMENT.md. The originex_app/system/owner roles and the pgcrypto
+  # extension must exist in the target database before boot, or the service fails
+  # loud at connection time (by design): locally via dev/init-scripts/init-databases.sql,
+  # elsewhere via DBA/IaC provisioning.
+  profiles:
+    include: rls
   threads:
     virtual:
       enabled: true
@@ -32,11 +44,15 @@ spring:
       group-id: lms-service-group
       auto-offset-reset: earliest
       enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
       properties:
         max.poll.records: 100
         session.timeout.ms: 30000
     producer:
       acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
       properties:
         enable.idempotence: true
 
@@ -67,10 +83,25 @@ originex:
     header-name: X-Tenant-Id
     enforce: true
   kafka:
-    schema-registry-url: http://localhost:8081
+    schema-registry-url: http://localhost:8090
     topics:
       disbursement-requested: originex.los.applications.events
       loan-events: originex.lms.loans.events
+  lms:
+    # Daily interest accrual job. Set enabled=false to disable it in an
+    # environment (the scheduler bean is then not created and never runs).
+    accrual:
+      enabled: true
+      cron: "0 30 0 * * *"   # 00:30 in the configured zone
+      zone: Asia/Kolkata
+      batch-size: 500
+    # Daily DPD / NPA aging job. Runs after accrual (01:00) so classification
+    # reflects the day's balances. Set enabled=false to disable the scheduler bean.
+    dpd:
+      enabled: true
+      cron: "0 0 1 * * *"    # 01:00 in the configured zone
+      zone: Asia/Kolkata
+      batch-size: 500
 
 logging:
   level:

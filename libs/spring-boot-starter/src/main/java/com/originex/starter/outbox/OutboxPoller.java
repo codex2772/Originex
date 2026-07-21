@@ -110,6 +110,12 @@ public class OutboxPoller {
         if (eventType.startsWith("originex.customer.")) return "originex.customer.customers.events";
         if (eventType.startsWith("originex.ledger.")) return "originex.ledger.journal-entries.events";
         if (eventType.startsWith("originex.payments.")) return "originex.payments.orders.events";
+        // bre-service, partner-integration-service, and notification-service don't publish via
+        // outbox yet, but route to their reserved topics (see infra/kafka/topics.yaml) now so a
+        // future publisher can't silently land in the unrouted-events fallback below.
+        if (eventType.startsWith("originex.bre.")) return "originex.bre.evaluations.events";
+        if (eventType.startsWith("originex.partner.")) return "originex.partner.integration-requests.events";
+        if (eventType.startsWith("originex.notification.")) return "originex.notifications.requests.events";
 
         // Fallback: use event type segments
         log.warn("Unknown event type for topic resolution: {}", eventType);

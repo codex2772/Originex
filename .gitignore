@@ -58,3 +58,4 @@ logs/
 # ─── Test output ───
 **/surefire-reports/
 **/failsafe-reports/
+**/.jqwik-database

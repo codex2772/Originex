@@ -1,6 +1,16 @@
 spring:
   application:
     name: bre-service
+  # RLS canary #5 of the Phase 2 rollout, after customer, ledger, payment, los and
+  # notification. "rls" is additive (e.g. SPRING_PROFILES_ACTIVE=prod → prod,rls)
+  # and loads application-rls.yml from the starter, which routes the runtime path
+  # through originex_app (NOBYPASSRLS) and Flyway through originex_owner. See
+  # dev/RLS_ENABLEMENT.md. The originex_app/system/owner roles and the pgcrypto
+  # extension must exist in the target database before boot, or the service fails
+  # loud at connection time (by design): locally via dev/init-scripts/init-databases.sql,
+  # elsewhere via DBA/IaC provisioning.
+  profiles:
+    include: rls
   threads:
     virtual:
       enabled: true

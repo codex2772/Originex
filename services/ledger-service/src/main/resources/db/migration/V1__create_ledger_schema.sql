@@ -15,7 +15,11 @@ CREATE TABLE ledger_events (
     event_type          VARCHAR(100) NOT NULL,
     event_data          JSONB NOT NULL,
     occurred_at         TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (tenant_id, aggregate_id, event_sequence)
+    -- occurred_at must be part of the PK: PostgreSQL requires every unique/PK
+    -- constraint on a partitioned table to include all partition-key columns.
+    -- Without it this CREATE TABLE fails outright on Postgres 16 (verified),
+    -- which meant this migration could never have applied successfully anywhere.
+    PRIMARY KEY (tenant_id, aggregate_id, event_sequence, occurred_at)
 ) PARTITION BY RANGE (occurred_at);
 
 -- Monthly partitions (create via pg_partman or manually)

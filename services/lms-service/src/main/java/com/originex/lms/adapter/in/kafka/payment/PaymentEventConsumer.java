@@ -3,6 +3,7 @@ package com.originex.lms.adapter.in.kafka.payment;
 import com.originex.common.tenant.TenantContext;
 import com.originex.common.tenant.TenantContextHolder;
 import com.originex.lms.application.port.in.LoanUseCase;
+import com.originex.starter.kafka.KafkaEventEnvelope;
 import com.originex.starter.outbox.InboxEventJpaEntity;
 import com.originex.starter.outbox.InboxEventRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,6 +27,10 @@ import java.util.UUID;
  *   <li>{@code PaymentReceived} → trigger repayment allocation on loan</li>
  *   <li>{@code PaymentFailed} → flag loan for manual intervention</li>
  * </ul>
+ *
+ * <p>Payload/header defects surface as {@link com.originex.starter.kafka.PoisonEventException}
+ * (via {@link KafkaEventEnvelope}) and are routed straight to the DLQ; transient failures propagate
+ * and are retried by the shared error handler.
  */
 @Component
 public class PaymentEventConsumer {
@@ -51,38 +56,35 @@ public class PaymentEventConsumer {
     )
     @Transactional
     public void handlePaymentEvent(ConsumerRecord<String, byte[]> record) {
-        String eventId  = extractHeader(record, "event_id");
-        String eventType = extractHeader(record, "event_type");
-        String tenantId = extractHeader(record, "tenant_id");
+        String eventType = KafkaEventEnvelope.requireHeader(record, "event_type");
+        UUID eventUuid = KafkaEventEnvelope.requireUuidHeader(record, "event_id");
+        String tenantId = KafkaEventEnvelope.requireHeader(record, "tenant_id");
 
-        if (eventId == null || eventType == null || tenantId == null) {
-            log.warn("Missing headers on payment event, skipping. offset={}", record.offset());
-            return;
-        }
-
-        UUID eventUuid = UUID.fromString(eventId);
         if (inboxRepository.existsById(eventUuid)) {
-            log.debug("Duplicate payment event, skipping: eventId={}", eventId);
+            log.debug("Duplicate payment event, skipping: eventId={}", eventUuid);
             return;
         }
 
         try {
             TenantContextHolder.set(TenantContext.of(tenantId, tenantId));
             MDC.put("tenantId", tenantId);
-            MDC.put("eventId", eventId);
+            MDC.put("eventId", eventUuid.toString());
 
             switch (eventType) {
-                case "originex.payments.DisbursementCompleted" -> handleDisbursementCompleted(tenantId, record.value());
-                case "originex.payments.PaymentReceived"       -> handlePaymentReceived(tenantId, record.value());
-                case "originex.payments.PaymentFailed"         -> handlePaymentFailed(tenantId, record.value());
-                default -> log.debug("Ignoring unhandled payment event: {}", eventType);
+                case "originex.payments.DisbursementCompleted" ->
+                        handleDisbursementCompleted(tenantId, KafkaEventEnvelope.readJson(objectMapper, record));
+                case "originex.payments.PaymentReceived" ->
+                        handlePaymentReceived(tenantId, KafkaEventEnvelope.readJson(objectMapper, record));
+                case "originex.payments.PaymentFailed" ->
+                        handlePaymentFailed(tenantId, KafkaEventEnvelope.readJson(objectMapper, record));
+                default -> {
+                    log.debug("Ignoring unhandled payment event: {}", eventType);
+                    return; // not our event — do not record in inbox
+                }
             }
 
             inboxRepository.save(InboxEventJpaEntity.of(eventUuid, eventType));
 
-        } catch (Exception e) {
-            log.error("Failed to process payment event: eventId={}, type={}", eventId, eventType, e);
-            throw new RuntimeException("Failed to process payment event: " + eventId, e);
         } finally {
             TenantContextHolder.clear();
             MDC.remove("tenantId");
@@ -91,11 +93,10 @@ public class PaymentEventConsumer {
     }
 
     /** Disbursement confirmed — record UTR on loan */
-    private void handleDisbursementCompleted(String tenantId, byte[] payload) throws Exception {
-        JsonNode json = objectMapper.readTree(payload);
-        String loanId = json.get("loan_id").asText();
-        String utr = json.has("utr") ? json.get("utr").asText() : "";
-        String paymentOrderId = json.get("payment_order_id").asText();
+    private void handleDisbursementCompleted(String tenantId, JsonNode json) {
+        String loanId = KafkaEventEnvelope.requiredText(json, "loan_id");
+        String utr = KafkaEventEnvelope.optionalText(json, "utr", "");
+        String paymentOrderId = KafkaEventEnvelope.requiredText(json, "payment_order_id");
 
         loanUseCase.confirmDisbursementByPayment(
                 UUID.fromString(tenantId), UUID.fromString(loanId),
@@ -105,12 +106,11 @@ public class PaymentEventConsumer {
     }
 
     /** Repayment received — allocate against loan schedule */
-    private void handlePaymentReceived(String tenantId, byte[] payload) throws Exception {
-        JsonNode json = objectMapper.readTree(payload);
-        String loanId = json.get("loan_id").asText();
-        String amount = json.get("amount").asText();
-        String currency = json.has("currency") ? json.get("currency").asText() : "INR";
-        String paymentType = json.has("payment_type") ? json.get("payment_type").asText() : "REPAYMENT_COLLECTION";
+    private void handlePaymentReceived(String tenantId, JsonNode json) {
+        String loanId = KafkaEventEnvelope.requiredText(json, "loan_id");
+        String amount = KafkaEventEnvelope.requiredText(json, "amount");
+        String currency = KafkaEventEnvelope.optionalText(json, "currency", "INR");
+        String paymentType = KafkaEventEnvelope.optionalText(json, "payment_type", "REPAYMENT_COLLECTION");
 
         // Only process repayment types (not disbursements echoed back)
         if ("DISBURSEMENT".equals(paymentType)) return;
@@ -122,16 +122,10 @@ public class PaymentEventConsumer {
     }
 
     /** Payment failed — log for manual review / collections */
-    private void handlePaymentFailed(String tenantId, byte[] payload) throws Exception {
-        JsonNode json = objectMapper.readTree(payload);
-        String loanId = json.get("loan_id").asText();
-        String reason = json.has("failure_reason") ? json.get("failure_reason").asText() : "Unknown";
+    private void handlePaymentFailed(String tenantId, JsonNode json) {
+        String loanId = KafkaEventEnvelope.requiredText(json, "loan_id");
+        String reason = KafkaEventEnvelope.optionalText(json, "failure_reason", "Unknown");
         log.warn("Payment failed for loan: loanId={}, reason={}", loanId, reason);
         // Future: update DPD, trigger collections workflow
-    }
-
-    private String extractHeader(ConsumerRecord<String, byte[]> record, String key) {
-        var header = record.headers().lastHeader(key);
-        return header != null ? new String(header.value()) : null;
     }
 }

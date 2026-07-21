@@ -4,6 +4,7 @@ import com.originex.common.tenant.TenantContext;
 import com.originex.common.tenant.TenantContextHolder;
 import com.originex.payment.application.port.in.PaymentUseCase;
 import com.originex.payment.application.port.in.PaymentUseCase.InitiateDisbursementCommand;
+import com.originex.starter.kafka.KafkaEventEnvelope;
 import com.originex.starter.outbox.InboxEventJpaEntity;
 import com.originex.starter.outbox.InboxEventRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -29,6 +30,10 @@ import java.util.UUID;
  * LOS → DisbursementRequested → LMS creates Loan → LMS publishes LoanDisbursed
  * → Payment Service consumes LoanDisbursed → initiates NEFT/RTGS/IMPS transfer
  * → Payment Service publishes DisbursementCompleted → LMS updates loan status
+ *
+ * <p>Payload/header defects surface as {@link com.originex.starter.kafka.PoisonEventException}
+ * (via {@link KafkaEventEnvelope}) and are routed straight to the DLQ; transient failures propagate
+ * and are retried by the shared error handler.
  */
 @Component
 public class LmsPaymentEventConsumer {
@@ -54,41 +59,37 @@ public class LmsPaymentEventConsumer {
     )
     @Transactional
     public void handleLmsEvent(ConsumerRecord<String, byte[]> record) {
-        String eventId = extractHeader(record, "event_id");
-        String eventType = extractHeader(record, "event_type");
-        String tenantId = extractHeader(record, "tenant_id");
+        String eventType = KafkaEventEnvelope.requireHeader(record, "event_type");
 
         // Only process events we care about
         if (!"originex.lms.LoanDisbursed".equals(eventType)) return;
-        if (eventId == null || tenantId == null) {
-            log.warn("Missing headers on LMS event, skipping. offset={}", record.offset());
-            return;
-        }
 
-        UUID eventUuid = UUID.fromString(eventId);
+        UUID eventUuid = KafkaEventEnvelope.requireUuidHeader(record, "event_id");
+        String tenantId = KafkaEventEnvelope.requireHeader(record, "tenant_id");
+
         if (inboxRepository.existsById(eventUuid)) {
-            log.debug("Duplicate LoanDisbursed, skipping: eventId={}", eventId);
+            log.debug("Duplicate LoanDisbursed, skipping: eventId={}", eventUuid);
             return;
         }
 
-        log.info("Processing LoanDisbursed for payment initiation: eventId={}", eventId);
+        log.info("Processing LoanDisbursed for payment initiation: eventId={}", eventUuid);
 
         try {
             TenantContextHolder.set(TenantContext.of(tenantId, tenantId));
             MDC.put("tenantId", tenantId);
-            MDC.put("eventId", eventId);
+            MDC.put("eventId", eventUuid.toString());
 
-            JsonNode json = objectMapper.readTree(record.value());
-            String loanId = json.get("loan_id").asText();
-            String amount = json.get("amount").asText();
-            String currency = json.has("currency") ? json.get("currency").asText() : "INR";
+            JsonNode json = KafkaEventEnvelope.readJson(objectMapper, record);
+            String loanId = KafkaEventEnvelope.requiredText(json, "loan_id");
+            String amount = KafkaEventEnvelope.requiredText(json, "amount");
+            String currency = KafkaEventEnvelope.optionalText(json, "currency", "INR");
 
             // These fields should be present from the LMS LoanDisbursed event payload
-            String beneficiaryAccount = json.has("beneficiary_account") ? json.get("beneficiary_account").asText() : null;
-            String beneficiaryIfsc = json.has("beneficiary_ifsc") ? json.get("beneficiary_ifsc").asText() : null;
-            String beneficiaryName = json.has("beneficiary_name") ? json.get("beneficiary_name").asText() : "Borrower";
-            String beneficiaryBank = json.has("beneficiary_bank") ? json.get("beneficiary_bank").asText() : null;
-            String customerId = json.has("customer_id") ? json.get("customer_id").asText() : null;
+            String beneficiaryAccount = KafkaEventEnvelope.optionalText(json, "beneficiary_account", null);
+            String beneficiaryIfsc = KafkaEventEnvelope.optionalText(json, "beneficiary_ifsc", null);
+            String beneficiaryName = KafkaEventEnvelope.optionalText(json, "beneficiary_name", "Borrower");
+            String beneficiaryBank = KafkaEventEnvelope.optionalText(json, "beneficiary_bank", null);
+            String customerId = KafkaEventEnvelope.optionalText(json, "customer_id", null);
 
             if (beneficiaryAccount == null || beneficiaryIfsc == null) {
                 log.error("LoanDisbursed event missing beneficiary details: loanId={}", loanId);
@@ -108,18 +109,10 @@ public class LmsPaymentEventConsumer {
             inboxRepository.save(InboxEventJpaEntity.of(eventUuid, eventType));
             log.info("Disbursement initiated from LoanDisbursed: loanId={}, amount={}", loanId, amount);
 
-        } catch (Exception e) {
-            log.error("Failed to process LoanDisbursed event: eventId={}", eventId, e);
-            throw new RuntimeException("Failed to process LoanDisbursed: " + eventId, e);
         } finally {
             TenantContextHolder.clear();
             MDC.remove("tenantId");
             MDC.remove("eventId");
         }
-    }
-
-    private String extractHeader(ConsumerRecord<String, byte[]> record, String key) {
-        var header = record.headers().lastHeader(key);
-        return header != null ? new String(header.value()) : null;
     }
 }

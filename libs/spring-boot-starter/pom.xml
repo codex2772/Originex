@@ -52,6 +52,18 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- OAuth2 resource server (see dev/AUTH_DESIGN.md). Optional like the
+             other Spring Boot starters above: it is on the starter's own compile
+             classpath so the (gated, default-off) SecurityAutoConfiguration
+             compiles, but it is NOT propagated to services transitively. A service
+             therefore has zero classpath/behaviour change until it explicitly opts
+             in by adding this dependency during its auth rollout. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Kafka -->
         <dependency>
             <groupId>org.springframework.kafka</groupId>
@@ -85,6 +97,28 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          In-memory JPA for OutboxPollerWiringTest: the outbox poller depends on a JPA
+          OutboxEventRepository, so the wiring test needs a real EntityManagerFactory.
+          H2 with ddl-auto=none builds the EMF without touching the schema (the entity's
+          jsonb column has no H2 equivalent, and the test asserts bean presence, not DB I/O).
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          Driver class only, so DataSourceAutoConfiguration can construct a Hikari pool in
+          StockDataSourceDefaultsEnvironmentPostProcessorTest. Hikari does not connect at
+          construction, so no database is involved. Services declare postgresql at runtime
+          scope themselves; the starter needs it for this test alone.
+        -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

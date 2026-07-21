@@ -1,0 +1,36 @@
+-- ═══════════════════════════════════════════════════════════════
+-- V3__add_outbox_published_at.sql
+-- Phase 0 stabilization — see CLAUDE_ANALYSIS.md §9 backlog item
+-- "Align ledger outbox_events schema with shared OutboxEventJpaEntity".
+--
+-- ledger-service's outbox_events table (created in V1) omits the
+-- published_at column that every other outbox-using service
+-- (customer/los/lms) includes and that the shared
+-- OutboxEventJpaEntity (libs/spring-boot-starter) maps. This is not
+-- cosmetic — published_at is written on every successful publish
+-- (OutboxPoller.markPublished() → UPDATE ... SET published_at) and read
+-- by the daily cleanup job (OutboxEventRepository.deletePublishedBefore()
+-- → DELETE ... WHERE published_at < :before). Without it:
+--   * spring.jpa.hibernate.ddl-auto: validate (set on every service)
+--     fails Hibernate schema validation at boot, AND
+--   * even with validation off, the first published ledger event
+--     (originex.ledger.JournalEntryPosted) would fail at runtime.
+--
+-- V1 itself applies cleanly (it is not a broken migration), so per the
+-- project's "never modify historical migrations unless they are
+-- unusable" rule this is an additive ALTER in a new migration rather
+-- than an edit to V1.
+--
+-- NOTE ON COLUMN ORDER: customer/los/lms declare published_at between
+-- created_at and status in their CREATE TABLE. Postgres appends an
+-- ALTER-added column at the end instead, so ledger's physical column
+-- order will differ. This is intentional and harmless — Hibernate
+-- validates by column NAME, not ordinal position, and the entity has no
+-- SELECT * dependency on order. Nullable with no default, matching the
+-- entity's `@Column(name = "published_at")` (no nullable=false, no
+-- default) and the other services' `published_at TIMESTAMP WITH TIME
+-- ZONE` (nullable, no default) exactly.
+-- ═══════════════════════════════════════════════════════════════
+
+ALTER TABLE outbox_events
+    ADD COLUMN published_at TIMESTAMP WITH TIME ZONE;

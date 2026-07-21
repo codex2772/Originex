@@ -70,11 +70,46 @@ public class CustomerServiceAdapter implements CustomerVerificationPort {
                 "Customer service temporarily unavailable. Please retry.");
     }
 
+    @Override
+    @CircuitBreaker(name = "customerService", fallbackMethod = "fallbackBankAccount")
+    @Retry(name = "customerService")
+    public BeneficiaryAccount getPrimaryBankAccount(String tenantId, String customerId) {
+        try {
+            BankAccountResponse resp = restClient.get()
+                    .uri("/v1/customers/{id}/bank-accounts/primary", customerId)
+                    .header("X-Tenant-Id", tenantId)
+                    .retrieve()
+                    .body(BankAccountResponse.class);
+            if (resp == null) {
+                return null;
+            }
+            return new BeneficiaryAccount(resp.accountNumber(), resp.ifscCode(),
+                    resp.accountHolderName(), resp.bankName());
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound e) {
+            // No primary bank account on file — a normal case, not a failure.
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private BeneficiaryAccount fallbackBankAccount(String tenantId, String customerId, Throwable t) {
+        log.warn("Customer service unavailable fetching bank account: {}", t.getMessage());
+        return null;
+    }
+
     private record CustomerResponse(
             String id,
             String firstName,
             String lastName,
             String status,
             String kycStatus
+    ) {}
+
+    private record BankAccountResponse(
+            String accountNumber,
+            String ifscCode,
+            String accountHolderName,
+            String bankName,
+            boolean verified
     ) {}
 }

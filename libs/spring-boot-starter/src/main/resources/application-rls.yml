@@ -1,0 +1,55 @@
+# ============================================================================
+# Shared RLS enablement profile  —  activate with the "rls" Spring profile.
+#
+# This file lives ONCE in the platform starter so every service inherits
+# identical row-level-security wiring; there is no per-service RLS YAML to keep
+# in sync. It is profile-specific (application-rls.yml), so Spring Boot loads it
+# only when the "rls" profile is active — e.g. SPRING_PROFILES_ACTIVE=rls.
+#
+# DORMANT BY DEFAULT: with the profile inactive this file is never loaded,
+# originex.rls.enabled stays false (its Java default), and each service keeps
+# its stock single datasource + JpaTransactionManager. Behaviour is unchanged.
+#
+# ENABLING A SERVICE = add "rls" to that service's active profiles. Do NOT do
+# this for any service until its Phase-1 canary stage. See dev/RLS_ENABLEMENT.md.
+#
+# The app, system, and owner roles all connect to the SAME database as the
+# service's existing spring.datasource.url — only the ROLE differs. Override per
+# environment with the RLS_* variables below; the defaults target the local
+# docker Postgres provisioned by dev/init-scripts/init-databases.sql.
+#
+# PRODUCTION: the *_local password defaults MUST be overridden via secrets
+# (RLS_APP_PASSWORD / RLS_SYSTEM_PASSWORD / RLS_OWNER_PASSWORD). A wrong
+# password fails loud at connection time; it never weakens tenant isolation.
+# ============================================================================
+originex:
+  rls:
+    enabled: true
+    datasource:
+      # Request/consumer runtime path — originex_app (NOBYPASSRLS). This is the
+      # role tenant isolation actually depends on.
+      app:
+        url: ${RLS_DATASOURCE_URL:${spring.datasource.url}}
+        username: ${RLS_APP_USERNAME:originex_app}
+        password: ${RLS_APP_PASSWORD:originex_app_local}
+        maximum-pool-size: ${RLS_APP_POOL_SIZE:10}
+        pool-name: ${spring.application.name:originex}-rls-app
+      # Cross-tenant background workers (accrual, DPD, retry pollers) routed via
+      # SystemContextHolder — originex_system (BYPASSRLS).
+      system:
+        url: ${RLS_DATASOURCE_URL:${spring.datasource.url}}
+        username: ${RLS_SYSTEM_USERNAME:originex_system}
+        password: ${RLS_SYSTEM_PASSWORD:originex_system_local}
+        maximum-pool-size: ${RLS_SYSTEM_POOL_SIZE:5}
+        pool-name: ${spring.application.name:originex}-rls-system
+
+spring:
+  flyway:
+    # Flyway runs as the owner role: originex_owner uniquely holds BOTH CREATE on
+    # schema (DDL) and BYPASSRLS (to seed FORCE-RLS reference tables). Providing
+    # an explicit url makes Flyway build its OWN datasource, so migrations are
+    # not routed through the @Primary TenantRoutingDataSource — which would use
+    # the NOBYPASSRLS app role and fail every DDL statement.
+    url: ${RLS_DATASOURCE_URL:${spring.datasource.url}}
+    user: ${RLS_OWNER_USERNAME:originex_owner}
+    password: ${RLS_OWNER_PASSWORD:originex_owner_local}

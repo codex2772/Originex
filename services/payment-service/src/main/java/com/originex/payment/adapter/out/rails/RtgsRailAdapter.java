@@ -9,7 +9,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * RTGS (Real Time Gross Settlement) adapter — for high-value transfers >= ₹2 lakhs.
+ * RTGS (Real Time Gross Settlement) adapter — for high-value transfers above
+ * ₹5 lakhs, where {@code PaymentApplicationService.selectRail()} auto-selects
+ * this rail (amounts from ₹2L up to ₹5L auto-select IMPS instead; see that
+ * method's Javadoc for the full three-way business rule).
  * Settles individually and instantly (during RBI RTGS hours: 7 AM–6 PM).
  */
 @Component

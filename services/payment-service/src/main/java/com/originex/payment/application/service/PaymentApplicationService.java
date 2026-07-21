@@ -1,10 +1,13 @@
 package com.originex.payment.application.service;
 
 import com.originex.common.money.Money;
+import com.originex.common.tenant.SystemContextHolder;
 import com.originex.payment.application.port.in.PaymentUseCase;
 import com.originex.payment.application.port.out.NachMandateRepository;
 import com.originex.payment.application.port.out.PaymentOrderRepository;
 import com.originex.payment.application.port.out.PaymentRailPort;
+import com.originex.payment.domain.exception.NachMandateNotFoundException;
+import com.originex.payment.domain.exception.PaymentOrderNotFoundException;
 import com.originex.payment.domain.model.NachMandate;
 import com.originex.payment.domain.model.PaymentOrder;
 import com.originex.payment.domain.model.PaymentOrder.PaymentRail;
@@ -12,8 +15,10 @@ import com.originex.payment.domain.model.PaymentOrder.PaymentType;
 import com.originex.starter.outbox.OutboxPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -42,25 +47,37 @@ public class PaymentApplicationService implements PaymentUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentApplicationService.class);
 
-    // RTGS threshold: ₹2 lakhs minimum
-    private static final BigDecimal RTGS_THRESHOLD = new BigDecimal("200000");
-    // IMPS threshold: ₹5 lakhs max (regulatory limit)
-    private static final BigDecimal IMPS_MAX = new BigDecimal("500000");
+    // Payment rail auto-selection band boundaries — see selectRail() below for
+    // the full business rule these implement. IMPS_MIN_AMOUNT is also the
+    // point below which NEFT is used; IMPS_MAX_AMOUNT is also the point above
+    // which RTGS is used, so the three rails partition the amount range with
+    // no overlap and no gap.
+    private static final BigDecimal IMPS_MIN_AMOUNT = new BigDecimal("200000"); // ₹2,00,000
+    private static final BigDecimal IMPS_MAX_AMOUNT = new BigDecimal("500000"); // ₹5,00,000
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final NachMandateRepository nachMandateRepository;
     private final Map<PaymentRail, PaymentRailPort> railAdapters;
     private final OutboxPublisher outboxPublisher;
+    /**
+     * Self-reference (Spring proxy) used only by {@link #retryFailedPaymentsJob()}
+     * to invoke the transactional {@link #retryFailedPayments()} through the proxy
+     * — a direct internal call would bypass the transaction advice. {@code @Lazy}
+     * breaks the self-referential construction cycle.
+     */
+    private final PaymentApplicationService self;
 
     public PaymentApplicationService(PaymentOrderRepository paymentOrderRepository,
                                      NachMandateRepository nachMandateRepository,
                                      List<PaymentRailPort> railPorts,
-                                     OutboxPublisher outboxPublisher) {
+                                     OutboxPublisher outboxPublisher,
+                                     @Lazy PaymentApplicationService self) {
         this.paymentOrderRepository = paymentOrderRepository;
         this.nachMandateRepository = nachMandateRepository;
         this.railAdapters = railPorts.stream()
                 .collect(Collectors.toMap(PaymentRailPort::rail, p -> p));
         this.outboxPublisher = outboxPublisher;
+        this.self = self;
     }
 
     @Override
@@ -121,7 +138,7 @@ public class PaymentApplicationService implements PaymentUseCase {
         log.info("Triggering NACH collection: loanId={}, amount={}", command.loanId(), command.amount());
 
         NachMandate mandate = nachMandateRepository.findById(command.tenantId(), command.mandateId())
-                .orElseThrow(() -> new IllegalArgumentException("NACH mandate not found: " + command.mandateId()));
+                .orElseThrow(() -> new NachMandateNotFoundException(command.mandateId()));
 
         if (!mandate.isActive()) {
             throw new IllegalStateException("NACH mandate is not active: " + command.mandateId() + " status=" + mandate.getStatus());
@@ -180,7 +197,7 @@ public class PaymentApplicationService implements PaymentUseCase {
     @Transactional(readOnly = true)
     public PaymentOrder getPaymentOrder(UUID tenantId, UUID paymentOrderId) {
         return paymentOrderRepository.findById(tenantId, paymentOrderId)
-                .orElseThrow(() -> new IllegalArgumentException("Payment order not found: " + paymentOrderId));
+                .orElseThrow(() -> new PaymentOrderNotFoundException(paymentOrderId));
     }
 
     @Override
@@ -221,10 +238,31 @@ public class PaymentApplicationService implements PaymentUseCase {
     }
 
     /**
-     * Retry scheduler — picks up RETRY_PENDING orders and resubmits.
+     * Retry scheduler entry point — picks up RETRY_PENDING orders and resubmits.
      * Runs every 5 minutes.
+     *
+     * <p>This is a cross-tenant sweep, so it must run on the BYPASSRLS (system)
+     * route when RLS is enabled. System context is entered here, *outside* the
+     * transactional boundary of {@link #retryFailedPayments()}, because the
+     * routing datasource picks its route when the transaction acquires its
+     * connection (see dev/RLS_DESIGN.md §5, §7.2). This method is therefore
+     * non-transactional ({@link Propagation#NOT_SUPPORTED}) and delegates through
+     * the Spring proxy ({@code self}) so {@code retryFailedPayments()} opens its
+     * transaction while system context is already set. {@code runAsSystem}
+     * guarantees the context is cleared in a finally block even if a retry throws.
      */
     @Scheduled(fixedDelayString = "${originex.payment.retry-interval-ms:300000}")
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void retryFailedPaymentsJob() {
+        SystemContextHolder.runAsSystem(self::retryFailedPayments);
+    }
+
+    /**
+     * Resubmits RETRY_PENDING orders in a single transaction. Invoked by
+     * {@link #retryFailedPaymentsJob()} within system context — never schedule or
+     * call this directly, or it will run on the RLS-subject route with no tenant
+     * bound.
+     */
     @Transactional
     public void retryFailedPayments() {
         List<PaymentOrder> pending = paymentOrderRepository.findPendingRetries(50);
@@ -267,19 +305,29 @@ public class PaymentApplicationService implements PaymentUseCase {
     }
 
     /**
-     * Auto-select payment rail:
-     * - RTGS: >= ₹2 Lakhs (high-value, same day settlement)
-     * - IMPS: < ₹5 Lakhs and urgent (instant, 24x7)
-     * - NEFT: default (settled in batches)
+     * Auto-selects a payment rail by amount when no explicit {@code preferred}
+     * rail is given. An explicit preferred rail always wins over auto-selection,
+     * regardless of amount.
+     *
+     * <p>Business rule (three non-overlapping bands, no gap):
+     * <ul>
+     *   <li>amount &gt; ₹5,00,000 → RTGS — high-value, no upper cap</li>
+     *   <li>₹2,00,000 ≤ amount ≤ ₹5,00,000 → IMPS — instant 24x7, capped at ₹5L</li>
+     *   <li>amount &lt; ₹2,00,000 → NEFT — no minimum, batched settlement</li>
+     * </ul>
      */
-    private PaymentRail selectRail(String preferred, Money amount) {
+    // Package-private (not private) so PaymentApplicationServiceTest can call it
+    // directly instead of reconstructing behavior through the full
+    // initiateDisbursement() flow, which would need repository/adapter mocks
+    // that this pure amount-to-rail decision doesn't otherwise need.
+    PaymentRail selectRail(String preferred, Money amount) {
         if (preferred != null && !preferred.isBlank()) {
             try { return PaymentRail.valueOf(preferred.toUpperCase()); }
             catch (IllegalArgumentException ignored) {}
         }
         BigDecimal amountValue = amount.getAmount();
-        if (amountValue.compareTo(RTGS_THRESHOLD) >= 0) return PaymentRail.RTGS;
-        if (amountValue.compareTo(IMPS_MAX) <= 0) return PaymentRail.IMPS;
+        if (amountValue.compareTo(IMPS_MAX_AMOUNT) > 0) return PaymentRail.RTGS;
+        if (amountValue.compareTo(IMPS_MIN_AMOUNT) >= 0) return PaymentRail.IMPS;
         return PaymentRail.NEFT;
     }
 

@@ -234,9 +234,15 @@ public class LoanApplicationService implements LoanApplicationUseCase {
                             currency, breResult.riskGrade())
                             .getBytes(StandardCharsets.UTF_8));
         } else {
-            // REFER_TO_UNDERWRITER — leave in IN_PROGRESS for manual review
+            // REFER_TO_UNDERWRITER — move to REFERRED so the application becomes a
+            // queryable manual-review case. Previously it was left in IN_PROGRESS,
+            // which had no exit path (neither auto-decisioned nor actionable).
+            // assignedTo is null at auto-referral time; assignment/queueing is out
+            // of scope. No new event is published — CreditCheckCompleted was already
+            // emitted earlier in this method.
+            app.refer(null);
             saved = applicationRepository.save(app);
-            log.info("Application referred to underwriter: appId={}, reason={}", applicationId, breResult.summary());
+            log.info("Application referred for manual review: appId={}, reason={}", applicationId, breResult.summary());
         }
 
         return saved;
@@ -281,9 +287,40 @@ public class LoanApplicationService implements LoanApplicationUseCase {
     }
 
     @Override
+    public LoanApplication rejectApplication(RejectCommand command) {
+        LoanApplication app = applicationRepository.findById(command.tenantId(), command.applicationId())
+                .orElseThrow(() -> new ApplicationNotFoundException(command.applicationId()));
+
+        // Domain owns the rule (transition guard + decision notes); this is
+        // orchestration only. Mirrors the auto-reject publish in initiateCreditCheck.
+        app.reject(command.reason());
+
+        LoanApplication saved = applicationRepository.save(app);
+        log.info("Application rejected: appId={}", command.applicationId());
+
+        outboxPublisher.publish("LoanApplication", command.applicationId(),
+                "originex.los.ApplicationRejected", command.tenantId(),
+                String.format("{\"application_id\":\"%s\",\"reason\":\"%s\"}",
+                        command.applicationId(), command.reason())
+                        .getBytes(StandardCharsets.UTF_8));
+
+        return saved;
+    }
+
+    @Override
     public LoanApplication acceptOffer(UUID tenantId, UUID applicationId) {
         LoanApplication app = applicationRepository.findById(tenantId, applicationId)
                 .orElseThrow(() -> new ApplicationNotFoundException(applicationId));
+
+        // Resolve the disbursement beneficiary before transitioning, so a missing
+        // bank account fails cleanly (app stays OFFER_PENDING, retryable) rather
+        // than producing a loan that can never be disbursed.
+        CustomerVerificationPort.BeneficiaryAccount beneficiary =
+                customerVerificationPort.getPrimaryBankAccount(tenantId.toString(), app.getCustomerId().toString());
+        if (beneficiary == null || beneficiary.accountNumber() == null || beneficiary.ifscCode() == null) {
+            throw new IllegalStateException(
+                    "No bank account on file for disbursement; add a bank account before accepting the offer");
+        }
 
         app.acceptOffer();
         app.requestDisbursement();
@@ -293,7 +330,7 @@ public class LoanApplicationService implements LoanApplicationUseCase {
 
         outboxPublisher.publish("LoanApplication", applicationId,
                 "originex.los.DisbursementRequested", tenantId,
-                buildDisbursementRequestedPayload(saved));
+                buildDisbursementRequestedPayload(saved, beneficiary));
 
         return saved;
     }
@@ -321,17 +358,27 @@ public class LoanApplicationService implements LoanApplicationUseCase {
         ).getBytes(StandardCharsets.UTF_8);
     }
 
-    private byte[] buildDisbursementRequestedPayload(LoanApplication app) {
+    // Package-private + static so DisbursementRequestedPayloadContractTest can assert the emitted
+    // payload carries every field its downstream consumers parse (lms's DisbursementRequestedConsumer
+    // requires customer_id/application_id/product_code/sanctioned_amount/interest_rate/tenure_months/emi;
+    // the beneficiary fields flow through lms's LoanDisbursed to payment, which requires them). This is
+    // the producer-side contract guard chosen over a full multi-service e2e boot.
+    static byte[] buildDisbursementRequestedPayload(LoanApplication app,
+                                                     CustomerVerificationPort.BeneficiaryAccount beneficiary) {
         var offer = app.getCurrentOffer();
         return String.format(
                 "{\"application_id\":\"%s\",\"customer_id\":\"%s\",\"product_code\":\"%s\"," +
                         "\"sanctioned_amount\":\"%s\",\"interest_rate\":\"%s\",\"rate_type\":\"FIXED\"," +
-                        "\"tenure_months\":%d,\"emi\":\"%s\",\"currency\":\"%s\"}",
+                        "\"tenure_months\":%d,\"emi\":\"%s\",\"currency\":\"%s\"," +
+                        "\"beneficiary_account\":\"%s\",\"beneficiary_ifsc\":\"%s\"," +
+                        "\"beneficiary_name\":\"%s\",\"beneficiary_bank\":\"%s\"}",
                 app.getApplicationId(), app.getCustomerId(), app.getProductCode(),
                 offer.getSanctionedAmount().getAmount().toPlainString(),
                 offer.getInterestRate().toPlainString(),
                 offer.getTenureMonths(), offer.getEmi().getAmount().toPlainString(),
-                offer.getSanctionedAmount().getCurrencyCode()
+                offer.getSanctionedAmount().getCurrencyCode(),
+                beneficiary.accountNumber(), beneficiary.ifscCode(),
+                beneficiary.accountHolderName(), beneficiary.bankName()
         ).getBytes(StandardCharsets.UTF_8);
     }
 }

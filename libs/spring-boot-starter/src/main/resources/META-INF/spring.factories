@@ -1,0 +1,3 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  com.originex.starter.datasource.StockDataSourceDefaultsEnvironmentPostProcessor,\
+  com.originex.starter.kafka.KafkaSerdeDefaultsEnvironmentPostProcessor

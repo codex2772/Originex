@@ -4,6 +4,8 @@ import com.originex.common.money.Money;
 import com.originex.ledger.application.port.in.LedgerUseCase;
 import com.originex.ledger.application.port.out.AccountRepository;
 import com.originex.ledger.application.port.out.JournalEntryRepository;
+import com.originex.ledger.domain.exception.AccountNotFoundException;
+import com.originex.ledger.domain.exception.JournalEntryNotFoundException;
 import com.originex.ledger.domain.model.Account;
 import com.originex.ledger.domain.model.JournalEntry;
 import com.originex.ledger.domain.model.JournalEntry.Posting;
@@ -59,7 +61,7 @@ public class LedgerApplicationService implements LedgerUseCase {
     @Transactional(readOnly = true)
     public Account getAccount(UUID tenantId, UUID accountId) {
         return accountRepository.findById(tenantId, accountId)
-                .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
     }
 
     @Override
@@ -115,7 +117,7 @@ public class LedgerApplicationService implements LedgerUseCase {
     @Override
     public JournalEntry reverseEntry(UUID tenantId, UUID entryId, String reason) {
         JournalEntry original = journalEntryRepository.findById(tenantId, entryId)
-                .orElseThrow(() -> new IllegalArgumentException("Journal entry not found: " + entryId));
+                .orElseThrow(() -> new JournalEntryNotFoundException(entryId));
 
         JournalEntry reversal = original.reverse(reason, "SYSTEM");
 

@@ -1,0 +1,140 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Originex — GitLab CI
+#
+#  Faithful translation of .github/workflows/ci.yml ("Platform CI"), added
+#  because the GitHub account is suspended and GitHub Actions cannot run on
+#  GitLab. .github/workflows/ is left intact for when the GitHub appeal
+#  resolves — this file is ADDITIVE, not a replacement.
+#
+#  ┌───────────────────────────────────────────────────────────────────────┐
+#  │  READ THIS — A GREEN PIPELINE IS *NOT* THE FULL GATE.                   │
+#  │                                                                         │
+#  │  Auto pipeline green  =  build + unit tests + the LIGHT integration     │
+#  │                          tests (Postgres / Postgres+Kafka ITs) passed.  │
+#  │                                                                         │
+#  │  It does NOT mean the RLS / Keycloak integration suite passed. Those    │
+#  │  ITs boot Postgres + Kafka + Keycloak simultaneously (~5-6 GB), which   │
+#  │  the gitlab.com free "small" shared runner (~4 GB) cannot fit. They     │
+#  │  are split into the MANUAL `integration_rls` job.                       │
+#  │                                                                         │
+#  │  FULL GATE  =  auto pipeline green  AND  `integration_rls` manually     │
+#  │               run and green (on a runner with enough memory).           │
+#  │                                                                         │
+#  │  `integration_rls` is a BLOCKING manual job (allow_failure: false), so  │
+#  │  the pipeline reports as "blocked" — never "passed" — until it is run.  │
+#  │  That is deliberate: it makes the RLS gap impossible to mistake for a   │
+#  │  full pass. Do not change it to allow_failure: true without accepting   │
+#  │  that a green pipeline would then silently exclude the RLS suite.       │
+#  │                                                                         │
+#  │  Light vs heavy is selected by JUnit @Tag("keycloak") on the ITs that   │
+#  │  actually instantiate a Keycloak container:                             │
+#  │    - light stage: -DexcludedGroups=keycloak  (denylist → fails LOUD:    │
+#  │      an untagged Keycloak IT runs here, OOMs, and turns the stage red)  │
+#  │    - heavy stage: -Dgroups=keycloak                                     │
+#  └───────────────────────────────────────────────────────────────────────┘
+#
+#  Notes on the translation from GitHub Actions:
+#    * Image: GitHub used setup-java (which provides Maven). There is no Maven
+#      wrapper in this repo, so we use maven:3.9-eclipse-temurin-21 (Maven +
+#      JDK 21 Temurin) instead of a bare eclipse-temurin:21-jdk.
+#    * Docker for Testcontainers: GitHub's ubuntu-latest has a built-in Docker
+#      daemon. gitlab.com shared runners do not expose the host socket, so the
+#      integration jobs use docker-in-docker (services: docker:dind). The ITs
+#      use Testcontainers (their OWN Postgres/Kafka/Keycloak containers); they
+#      do NOT use GitLab `services:` for those. Ryuk stays ENABLED (GitLab
+#      runners can reach the registry to pull it).
+#    * No custom -s settings.xml: the root pom declares the Confluent repo and
+#      a clean runner has no private mirror, so Central + Confluent resolve
+#      directly (dev/settings.xml is a local-only workaround; CI never used it).
+#    * Unit tests are gated in `build_and_unit`; the integration jobs pass
+#      -Dsurefire.skip=true so they do not re-run units (only ITs).
+#
+#  Testcontainers images the ITs pull (ensure runner headroom):
+#    postgres:16-alpine · confluentinc/cp-kafka:7.7.1 · quay.io/keycloak/keycloak:26.0
+# ═══════════════════════════════════════════════════════════════════════════
+
+variables:
+  # Local repo lives inside the project dir so GitLab `cache:` can persist it.
+  MAVEN_CLI_OPTS: "-B -ntp -Dmaven.repo.local=.m2/repository"
+
+default:
+  image: maven:3.9-eclipse-temurin-21
+
+# Maven dependency cache, keyed on the root pom hash.
+cache:
+  key:
+    files:
+      - pom.xml
+  paths:
+    - .m2/repository
+
+# Mirror GitHub's triggers: pushes to the default branch + merge requests.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+
+stages:
+  - build
+  - integration
+
+# ── Stage 1 · build + unit tests (no Docker; fits the small shared runner) ──
+build_and_unit:
+  stage: build
+  script:
+    - mvn $MAVEN_CLI_OPTS clean verify -DskipITs=true
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - "**/target/surefire-reports/TEST-*.xml"
+    expire_in: 1 week
+
+# ── Shared docker-in-docker setup for the Testcontainers integration jobs ──
+.integration_dind:
+  stage: integration
+  needs: ["build_and_unit"]
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_CERT_PATH: "/certs/client"
+    DOCKER_TLS_VERIFY: "1"
+    # Testcontainers reaches container-mapped ports via the dind host alias.
+    TESTCONTAINERS_HOST_OVERRIDE: "docker"
+    # Ryuk stays enabled — the runner can pull testcontainers/ryuk.
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - "**/target/surefire-reports/TEST-*.xml"
+        - "**/target/failsafe-reports/TEST-*.xml"
+    expire_in: 1 week
+
+# ── Stage 2a · LIGHT integration tests — AUTO-GATES ─────────────────────────
+# The 9 ITs with no Keycloak (Postgres, or Postgres+Kafka): ledger/payment/lms
+# Kafka seam ITs, the customer outbox-poller & notification Kafka-header→RLS
+# ITs, and the DB-only RLS ITs. (Phase 4 kafkaobs tests are EmbeddedKafka unit
+# tests — already gated in build_and_unit, no Docker needed.)
+integration_light:
+  extends: .integration_dind
+  script:
+    - mvn $MAVEN_CLI_OPTS verify -Pintegration-test -DexcludedGroups=keycloak -Dsurefire.skip=true
+
+# ── Stage 2b · RLS / KEYCLOAK integration tests — MANUAL, BLOCKING ──────────
+# The 7 ITs that boot Keycloak (Postgres + Kafka + Keycloak, ~5-6 GB). This
+# will very likely OOM on the default free "small" shared runner; it needs a
+# larger runner to actually pass. Enable the tag below once such a runner is
+# available (medium/large SaaS runners are a paid tier, or use a self-hosted
+# Docker runner with adequate RAM):
+#   tags: [saas-linux-medium-amd64]
+# It is a BLOCKING manual job on purpose: until it is run and green, the
+# pipeline stays "blocked", never "passed" — the full gate is not met.
+integration_rls:
+  extends: .integration_dind
+  when: manual
+  allow_failure: false
+  script:
+    - mvn $MAVEN_CLI_OPTS verify -Pintegration-test -Dgroups=keycloak -Dsurefire.skip=true

@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -50,6 +51,7 @@ public class Loan {
     private LocalDate maturityDate;
     private LocalDate nextDueDate;
     private LocalDate lastPaymentDate;
+    private LocalDate lastAccrualDate; // Date through which interest has been accrued (null until first disbursement)
 
     // Delinquency
     private int dpd;
@@ -131,6 +133,8 @@ public class Loan {
         if (this.firstDisbursementDate == null) {
             this.firstDisbursementDate = LocalDate.now();
             this.maturityDate = this.firstDisbursementDate.plusMonths(this.tenureMonths);
+            // Interest accrual starts from the activation (first disbursement) date.
+            this.lastAccrualDate = this.firstDisbursementDate;
         }
         this.updatedAt = Instant.now();
     }
@@ -181,6 +185,11 @@ public class Loan {
         }
 
         this.lastPaymentDate = LocalDate.now();
+
+        // Settle the amortization schedule oldest-installment-first with the
+        // interest + principal actually allocated, and advance the next due date.
+        settleSchedule(interestAllocated.add(principalAllocated));
+
         this.updatedAt = Instant.now();
 
         // Check if loan is fully paid
@@ -194,6 +203,24 @@ public class Loan {
         );
     }
 
+    /**
+     * Adds accrued interest to the outstanding interest balance.
+     *
+     * <p><b>v1 scope (Interest Accrual):</b> the daily accrual scheduler only
+     * feeds this method for loans in {@code ACTIVE} status (enforced by the
+     * accrual eligibility query, not by {@link #assertActive()} — which also
+     * permits {@code NPA} for repayment). NPA interest is therefore <b>not</b>
+     * accrued in v1.
+     *
+     * <p><b>Deferred (future) — NPA / regulatory interest treatment:</b> RBI
+     * norms require that once a loan is classified NPA, interest income
+     * recognition stops but interest may still accrue into an interest-suspense
+     * / memorandum account (not recognised as income). Implementing that will
+     * require: interest-suspense accounts, separate ledger postings, and
+     * reversal/reclassification logic on NPA transition and on cure. This is
+     * intentionally out of scope for v1 and must be revisited before NPA loans
+     * are handled for income recognition.
+     */
     public void accrueInterest(Money accruedAmount) {
         assertActive();
         this.outstandingInterest = this.outstandingInterest.add(accruedAmount);
@@ -205,6 +232,19 @@ public class Loan {
         this.outstandingCharges = this.outstandingCharges.add(chargeAmount);
         this.charges.add(LoanCharge.create(chargeAmount, chargeType));
         this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Days-past-due as of {@code asOf}: calendar days since the oldest unpaid
+     * installment's due date ({@link #nextDueDate}, which repayment advances to
+     * the oldest not-fully-paid installment). Zero when nothing is due yet or the
+     * schedule is absent. The caller supplies {@code asOf} in the business zone.
+     */
+    public int calculateDpd(LocalDate asOf) {
+        if (nextDueDate == null || !asOf.isAfter(nextDueDate)) {
+            return 0;
+        }
+        return (int) java.time.temporal.ChronoUnit.DAYS.between(nextDueDate, asOf);
     }
 
     public void updateDpd(int newDpd) {
@@ -241,6 +281,35 @@ public class Loan {
     // ═══════════════════════════════════════════════════════════════════
     // Helpers
     // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Distributes {@code amount} across the schedule oldest-installment-first
+     * (each installment interest-due then principal-due), then advances
+     * {@code nextDueDate} to the oldest installment not yet fully paid. Leaves
+     * {@code nextDueDate} unchanged when the schedule is absent (a loan loaded
+     * without its children must not be settled) or fully paid.
+     */
+    private void settleSchedule(Money amount) {
+        if (installments == null || installments.isEmpty() || !amount.isPositive()) {
+            return;
+        }
+        List<Installment> ordered = installments.stream()
+                .sorted(Comparator.comparingInt(Installment::getInstallmentNumber))
+                .toList();
+
+        Money remaining = amount;
+        for (Installment inst : ordered) {
+            if (!remaining.isPositive()) break;
+            if (inst.isFullyPaid()) continue;
+            remaining = remaining.subtract(inst.applyPayment(remaining));
+        }
+
+        ordered.stream()
+                .filter(i -> !i.isFullyPaid())
+                .map(Installment::getDueDate)
+                .findFirst()
+                .ifPresent(d -> this.nextDueDate = d);
+    }
 
     private void transitionTo(LoanStatus target) {
         if (!status.canTransitionTo(target)) {
@@ -295,6 +364,7 @@ public class Loan {
     public LocalDate getMaturityDate() { return maturityDate; }
     public LocalDate getNextDueDate() { return nextDueDate; }
     public LocalDate getLastPaymentDate() { return lastPaymentDate; }
+    public LocalDate getLastAccrualDate() { return lastAccrualDate; }
     public int getDpd() { return dpd; }
     public int getMaxDpd() { return maxDpd; }
     public String getAssetClassification() { return assetClassification; }
@@ -325,6 +395,8 @@ public class Loan {
     public void setCurrency(String s) { this.currency = s; }
     public void setMaturityDate(LocalDate d) { this.maturityDate = d; }
     public void setNextDueDate(LocalDate d) { this.nextDueDate = d; }
+    public void setLastPaymentDate(LocalDate d) { this.lastPaymentDate = d; }
+    public void setLastAccrualDate(LocalDate d) { this.lastAccrualDate = d; }
     public void setDpd(int i) { this.dpd = i; }
     public void setMaxDpd(int i) { this.maxDpd = i; }
     public void setAssetClassification(String s) { this.assetClassification = s; }

@@ -77,19 +77,22 @@ public class AccountJpaEntity {
         e.customerId = account.getCustomerId();
         e.lastEventSequence = account.getLastEventSequence();
         e.openedAt = account.getOpenedAt();
+        e.closedAt = account.getClosedAt();
         e.updatedAt = Instant.now();
         return e;
     }
 
     public Account toDomain() {
-        Account a = Account.open(
-                tenantId, accountNumber, name,
+        return Account.reconstitute(
+                accountId, tenantId, accountNumber, name,
                 Account.AccountType.valueOf(accountType),
-                glCode, currency
+                Account.DebitCredit.valueOf(normalBalance),
+                currency,
+                Money.of(balance, currency),
+                Account.AccountStatus.valueOf(status),
+                glCode, loanId, customerId,
+                lastEventSequence, openedAt, closedAt
         );
-        // The open() factory sets balance to zero; we need to override with persisted balance
-        // In production, this would use a dedicated reconstruction constructor
-        return a;
     }
 
     protected AccountJpaEntity() {}

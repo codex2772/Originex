@@ -46,6 +46,39 @@ public class Account {
     }
 
     /**
+     * Rehydrate an account from its persisted snapshot, preserving identity and
+     * cached state. Unlike {@link #open}, this does <b>not</b> mint a new id or zero
+     * the balance — it is the "dedicated reconstruction constructor" that the JPA
+     * mapper needs. Using {@code open()} to reload (as the mapper previously did)
+     * returned every account with a fresh random {@code accountId} and a zeroed
+     * balance; re-saving then INSERTed a duplicate {@code account_number} (violating
+     * {@code idx_account_number}) and silently discarded the real balance. See #5.
+     */
+    public static Account reconstitute(UUID accountId, UUID tenantId, String accountNumber,
+                                       String name, AccountType type, DebitCredit normalBalance,
+                                       String currency, Money balance, AccountStatus status,
+                                       String glCode, UUID loanId, UUID customerId,
+                                       long lastEventSequence, Instant openedAt, Instant closedAt) {
+        Account account = new Account();
+        account.accountId = accountId;
+        account.tenantId = tenantId;
+        account.accountNumber = accountNumber;
+        account.name = name;
+        account.accountType = type;
+        account.normalBalance = normalBalance;
+        account.currency = currency;
+        account.balance = balance;
+        account.status = status;
+        account.glCode = glCode;
+        account.loanId = loanId;
+        account.customerId = customerId;
+        account.lastEventSequence = lastEventSequence;
+        account.openedAt = openedAt;
+        account.closedAt = closedAt;
+        return account;
+    }
+
+    /**
      * Apply a posting to this account (updates cached balance).
      */
     public void applyPosting(DebitCredit side, Money amount) {
@@ -81,6 +114,7 @@ public class Account {
     public UUID getCustomerId() { return customerId; }
     public long getLastEventSequence() { return lastEventSequence; }
     public Instant getOpenedAt() { return openedAt; }
+    public Instant getClosedAt() { return closedAt; }
 
     public void setLoanId(UUID loanId) { this.loanId = loanId; }
     public void setCustomerId(UUID customerId) { this.customerId = customerId; }
