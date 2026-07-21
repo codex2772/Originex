@@ -35,7 +35,20 @@ public final class OriginexScopes {
 
     // Payments
     public static final String PAYMENTS_READ = "payments:read";
+    /** Collection / inbound / mandate-setup actions (money-in and setup side). */
     public static final String PAYMENTS_INITIATE = "payments:initiate";
+    /**
+     * Disbursing funds (money out) — a distinct privilege boundary from the money-in actions above.
+     * Dual-called: the human/service {@code POST /v1/payments/disbursements} endpoint enforces it, and
+     * the LoanDisbursed consumer is granted exactly this (and only this) as its minimal machine actor.
+     */
+    public static final String PAYMENTS_DISBURSE = "payments:disburse";
+    /**
+     * The payment-gateway callback (webhook). MACHINE-ONLY: held only by the gateway's service-account
+     * (client_credentials) token; no human persona holds it. Its presence on a human/interactive token
+     * is therefore definitionally anomalous and alertable (see the role-gating gap, KI-14).
+     */
+    public static final String PAYMENTS_CALLBACK = "payments:callback";
 
     // Ledger
     public static final String LEDGER_READ = "ledger:read";

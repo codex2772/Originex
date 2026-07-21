@@ -153,6 +153,42 @@
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
       }
+    },
+    {
+      "name": "payments:read",
+      "description": "Read payment orders",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payments:initiate",
+      "description": "Collection / inbound / mandate-setup actions",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payments:disburse",
+      "description": "Disburse funds (money out) — HTTP-enforced and the consumer's minimal machine grant",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payments:callback",
+      "description": "Payment-gateway webhook callback — machine-only (gateway service account)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     }
   ],
   "clients": [
@@ -182,7 +218,10 @@
         "customers:write",
         "ledger:read",
         "ledger:post",
-        "ledger:reverse"
+        "ledger:reverse",
+        "payments:read",
+        "payments:initiate",
+        "payments:disburse"
       ]
     },
     {
@@ -219,6 +258,25 @@
         "ledger:read",
         "ledger:post",
         "ledger:reverse"
+      ]
+    },
+    {
+      "clientId": "svc-payment",
+      "enabled": true,
+      "secret": "svc-payment-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "publicClient": false,
+      "defaultClientScopes": [
+        "basic",
+        "roles"
+      ],
+      "optionalClientScopes": [
+        "payments:read",
+        "payments:initiate",
+        "payments:disburse",
+        "payments:callback"
       ]
     }
   ],
