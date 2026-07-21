@@ -178,9 +178,13 @@ class LedgerRlsJwtIsolationIntegrationTest {
     // ── helpers ──
 
     private static String token(String username) {
-        // No scopes requested: ledger has no @PreAuthorize, and tenant_id rides on the
-        // originex-tenant default client scope.
-        return KeycloakSupport.passwordToken(KEYCLOAK, WEB_CLIENT, username, PASSWORD, "openid");
+        // ledger:read + ledger:post so the caller passes the port's @PreAuthorize on
+        // POST /v1/ledger/accounts (post) and GET /v1/ledger/accounts/{id} (read) under ENFORCED;
+        // tenant_id still rides on the originex-tenant default client scope.
+        return KeycloakSupport.passwordToken(KEYCLOAK, WEB_CLIENT, username, PASSWORD,
+                "openid",
+                com.originex.starter.security.OriginexScopes.LEDGER_READ,
+                com.originex.starter.security.OriginexScopes.LEDGER_POST);
     }
 
     /** Opens an account as the token's tenant and returns its Location. */
