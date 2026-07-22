@@ -178,6 +178,31 @@ class LosAuthorizationTest {
         });
     }
 
+    // ── the SoD gap, asserted as known current behaviour (KI-16) ──
+
+    @Test
+    @DisplayName("KNOWN GAP: a principal holding both submit and decide CAN approve its own submission")
+    void bothScopesCanSubmitAndApprove_openSelfApprovalGap() {
+        securityEnabled.run(ctx -> {
+            // A single persona granted BOTH scopes. Nothing in this pass forbids that: the realm
+            // issues scopes ungated (role-gating deferred, KI-14), and @PreAuthorize gates
+            // *capability*, not whether the same principal should exercise both on one application.
+            authenticate(SUBMIT, DECIDE);
+            LoanApplicationUseCase useCase = ctx.getBean(LoanApplicationUseCase.class);
+
+            // Asserted as expected CURRENT behaviour, not the desired end state. Self-approval stays
+            // OPEN until BOTH land: (b) role-gating stops issuing submit+decide to one persona, AND
+            // (c) a per-application approver≠submitter binding. This test documents the live gap so
+            // applications:decide is never mistaken for "approvals are controlled"; update it when
+            // either control arrives. See KI-16.
+            assertThatCode(() -> {
+                useCase.submitApplication(null);
+                useCase.approveAndGenerateOffer(null);
+            }).as("both capabilities resolve for one principal — the self-approval gap is real and OPEN")
+              .doesNotThrowAnyException();
+        });
+    }
+
     // ── the opt-in default ──
 
     @Test
