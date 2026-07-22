@@ -78,6 +78,21 @@ public final class OriginexScopes {
      */
     public static final String LEDGER_REVERSE = "ledger:reverse";
 
+    // Decisioning (BRE)
+    /**
+     * Run a business-rules evaluation of a loan application (BRE {@code POST /v1/bre/evaluate}). This is
+     * a <b>read</b> of the decisioning engine — rules in, a decision out, no state change. It is distinct
+     * from <i>authoring</i> the rules: mutating the lending rule sets is a far higher privilege (the
+     * {@code applications:underwrite}/loan-approval tier), and when a rule-management surface is built it
+     * MUST carry its own elevated scope(s) — possibly split for corrective ops, per the
+     * {@link #LEDGER_REVERSE}-vs-{@link #LEDGER_POST} precedent. No such surface exists in the app today
+     * (rule authoring is out-of-band via the owner/DBA), so there is nothing to gate here yet — see the
+     * note on {@code EvaluationUseCase}. bre's only caller is los, service-to-service; that call is
+     * currently token-less (threat T4, {@code dev/AUTH_DESIGN.md}), so this gate must stay dormant
+     * (service {@code security.enabled=false}) until los adopts a client-credentials token bearing it.
+     */
+    public static final String DECISIONING_EVALUATE = "decisioning:evaluate";
+
     // Collections
     public static final String COLLECTIONS_READ = "collections:read";
     public static final String COLLECTIONS_ACT = "collections:act";

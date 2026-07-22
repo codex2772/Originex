@@ -1,5 +1,6 @@
 package com.originex.bre.integration;
 
+import com.originex.starter.security.OriginexScopes;
 import com.originex.testsupport.keycloak.KeycloakSupport;
 import com.originex.testsupport.rls.RlsPostgresSupport;
 import org.junit.jupiter.api.BeforeAll;
@@ -184,9 +185,13 @@ class BreRlsJwtIsolationIntegrationTest {
     // ── helpers ──
 
     private static String token(String username) {
-        // No scopes requested: bre has no @PreAuthorize, and tenant_id rides on the
-        // originex-tenant default client scope.
-        return KeycloakSupport.passwordToken(KEYCLOAK, WEB_CLIENT, username, PASSWORD, "openid");
+        // decisioning:evaluate is now required: evaluate() carries @PreAuthorize on that scope, so an
+        // authenticated caller without it is denied (403) before RLS is ever reached. Requesting it here
+        // (it is an optional client scope on originex-web in the realm) makes these callers realistic,
+        // scope-authorized evaluate callers — the RLS isolation this test proves sits *behind* the gate.
+        // tenant_id still rides on the originex-tenant default client scope.
+        return KeycloakSupport.passwordToken(
+                KEYCLOAK, WEB_CLIENT, username, PASSWORD, "openid " + OriginexScopes.DECISIONING_EVALUATE);
     }
 
     /** POSTs the strong applicant; {@code spoofedTenant} may be null. Returns the decision string. */

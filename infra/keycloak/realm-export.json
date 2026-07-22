@@ -234,6 +234,15 @@
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
       }
+    },
+    {
+      "name": "decisioning:evaluate",
+      "description": "Run a BRE decisioning evaluation (read; rules in, decision out). Distinct from authoring rules. Machine grant (svc-los) deferred to S2S tokens (T4).",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     }
   ],
   "clients": [
@@ -268,7 +277,8 @@
         "payments:initiate",
         "payments:disburse",
         "loans:read",
-        "loans:repay-manual"
+        "loans:repay-manual",
+        "decisioning:evaluate"
       ]
     },
     {
