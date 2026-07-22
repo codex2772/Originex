@@ -3,6 +3,7 @@ package com.originex.lms.application.service;
 import com.originex.common.money.Money;
 import com.originex.lms.application.port.in.LoanUseCase;
 import com.originex.lms.application.port.out.LoanRepository;
+import com.originex.lms.domain.exception.LoanNotFoundException;
 import com.originex.lms.domain.model.Installment;
 import com.originex.lms.domain.model.Loan;
 import com.originex.lms.domain.service.ScheduleGenerator;
@@ -81,7 +82,7 @@ public class LoanApplicationServiceImpl implements LoanUseCase {
     @Transactional(readOnly = true)
     public Loan getLoan(UUID tenantId, UUID loanId) {
         return loanRepository.findById(tenantId, loanId)
-                .orElseThrow(() -> new IllegalArgumentException("Loan not found: " + loanId));
+                .orElseThrow(() -> new LoanNotFoundException(loanId));
     }
 
     @Override

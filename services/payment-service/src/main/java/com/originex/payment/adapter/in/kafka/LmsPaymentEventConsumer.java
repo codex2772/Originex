@@ -1,7 +1,8 @@
 package com.originex.payment.adapter.in.kafka;
 
 import com.originex.common.tenant.TenantContext;
-import com.originex.common.tenant.TenantContextHolder;
+import com.originex.starter.security.MachineActorContext;
+import com.originex.starter.security.OriginexScopes;
 import com.originex.payment.application.port.in.PaymentUseCase;
 import com.originex.payment.application.port.in.PaymentUseCase.InitiateDisbursementCommand;
 import com.originex.starter.kafka.KafkaEventEnvelope;
@@ -75,7 +76,9 @@ public class LmsPaymentEventConsumer {
         log.info("Processing LoanDisbursed for payment initiation: eventId={}", eventUuid);
 
         try {
-            TenantContextHolder.set(TenantContext.of(tenantId, tenantId));
+            // Tenant identity (RLS) + minimal machine authorization (payments:disburse only) — the one
+            // op this consumer invokes — established together and cleared together (see MachineActorContext).
+            MachineActorContext.establish(TenantContext.of(tenantId, tenantId), OriginexScopes.PAYMENTS_DISBURSE);
             MDC.put("tenantId", tenantId);
             MDC.put("eventId", eventUuid.toString());
 
@@ -110,7 +113,7 @@ public class LmsPaymentEventConsumer {
             log.info("Disbursement initiated from LoanDisbursed: loanId={}, amount={}", loanId, amount);
 
         } finally {
-            TenantContextHolder.clear();
+            MachineActorContext.clear();
             MDC.remove("tenantId");
             MDC.remove("eventId");
         }

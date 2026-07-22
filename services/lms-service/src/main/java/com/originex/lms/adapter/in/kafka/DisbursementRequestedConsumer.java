@@ -1,10 +1,11 @@
 package com.originex.lms.adapter.in.kafka;
 
 import com.originex.common.tenant.TenantContext;
-import com.originex.common.tenant.TenantContextHolder;
 import com.originex.lms.application.port.in.LoanUseCase;
 import com.originex.lms.application.port.in.LoanUseCase.CreateLoanCommand;
 import com.originex.starter.kafka.KafkaEventEnvelope;
+import com.originex.starter.security.MachineActorContext;
+import com.originex.starter.security.OriginexScopes;
 import com.originex.starter.outbox.InboxEventJpaEntity;
 import com.originex.starter.outbox.InboxEventRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -70,7 +71,10 @@ public class DisbursementRequestedConsumer {
         log.info("Processing DisbursementRequested: eventId={}", eventUuid);
 
         try {
-            TenantContextHolder.set(TenantContext.of(tenantId, tenantId));
+            // Machine actor: bind the tenant (for RLS) and grant EXACTLY loans:create — the only
+            // capability this consumer needs. It can neither disburse, service, nor manually assert a
+            // repayment; the fraud-sensitive loans:repay-manual is structurally out of its reach.
+            MachineActorContext.establish(TenantContext.of(tenantId, tenantId), OriginexScopes.LOANS_CREATE);
             MDC.put("tenantId", tenantId);
             MDC.put("eventId", eventUuid.toString());
 
@@ -102,7 +106,7 @@ public class DisbursementRequestedConsumer {
             log.info("Loan created from DisbursementRequested: eventId={}", eventUuid);
 
         } finally {
-            TenantContextHolder.clear();
+            MachineActorContext.clear();
             MDC.remove("tenantId");
             MDC.remove("eventId");
         }
