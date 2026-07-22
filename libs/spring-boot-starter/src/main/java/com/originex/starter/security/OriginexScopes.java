@@ -30,8 +30,24 @@ public final class OriginexScopes {
 
     // Loans (LMS)
     public static final String LOANS_READ = "loans:read";
+    /**
+     * Create a loan record from an approved application (status {@code CREATED}, pre-disbursement).
+     * Distinct from {@link #LOANS_DISBURSE}: creation and funding are separate lifecycle steps — a loan
+     * exists in {@code CREATED} before any money moves — so the machine that creates loans cannot disburse.
+     */
+    public static final String LOANS_CREATE = "loans:create";
     public static final String LOANS_DISBURSE = "loans:disburse";
+    /** Loan servicing — applying a <b>settlement-backed</b> repayment (driven by a verified payment event). */
     public static final String LOANS_SERVICE = "loans:service";
+    /**
+     * <b>Manually assert a repayment WITHOUT settlement verification.</b> This capability can mark a loan
+     * (partially) paid — reducing the borrower's outstanding and emitting a downstream {@code RepaymentAllocated}
+     * event — with <b>no proof any money was received</b> ({@code paymentReference} is unreconciled). It is a
+     * fraud-sensitive privilege of the same class as loan approval: grant it with decision-level scrutiny in
+     * role-gating, never to a machine/service account, and never bundle it with the backed {@link #LOANS_SERVICE}
+     * path. The unbacked assertion is un-attributed today (no recorded actor) — see KI-19.
+     */
+    public static final String LOANS_REPAY_MANUAL = "loans:repay-manual";
 
     // Payments
     public static final String PAYMENTS_READ = "payments:read";

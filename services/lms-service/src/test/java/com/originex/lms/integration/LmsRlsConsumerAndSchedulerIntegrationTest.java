@@ -95,6 +95,15 @@ class LmsRlsConsumerAndSchedulerIntegrationTest {
         r.add("spring.datasource.username", POSTGRES::getUsername);
         r.add("spring.datasource.password", POSTGRES::getPassword);
         r.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        // Enforce authorization so this becomes the decisive under-enforcement proof: the consumers now
+        // call @PreAuthorize'd ports, and only satisfy them because each establishes its minimal machine
+        // grant (loans:create for DisbursementRequested; loans:disburse / loans:service per branch for
+        // payment events). A wrong or missing grant would be denied here and fail the write. No HTTP path
+        // is exercised (webEnvironment=NONE), so the decoder is built but never called; the jwk-set-uri is
+        // a placeholder. The DPD/accrual schedulers are unaffected — they hit the repository, not the port.
+        r.add("originex.security.enabled", () -> "true");
+        r.add("originex.security.jwk-set-uri",
+                () -> "https://idp.invalid/realms/originex/protocol/openid-connect/certs");
     }
 
     private static KafkaProducer<String, byte[]> producer;

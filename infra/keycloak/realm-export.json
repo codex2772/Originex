@@ -189,6 +189,51 @@
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
       }
+    },
+    {
+      "name": "loans:read",
+      "description": "Read loans, repayment schedules and foreclosure quotes",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:create",
+      "description": "Create a loan record from an approved application (machine — DisbursementRequested consumer)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:disburse",
+      "description": "Disbursement lifecycle — confirm funds moved (machine — payment-event consumer)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:service",
+      "description": "Apply a settlement-backed repayment (machine — driven by a verified payment event)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:repay-manual",
+      "description": "FRAUD-SENSITIVE: manually assert a repayment WITHOUT settlement proof — can mark a loan paid with no money received. Human-only, decision-level scrutiny, never a service account (KI-19).",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     }
   ],
   "clients": [
@@ -221,7 +266,9 @@
         "ledger:reverse",
         "payments:read",
         "payments:initiate",
-        "payments:disburse"
+        "payments:disburse",
+        "loans:read",
+        "loans:repay-manual"
       ]
     },
     {
@@ -277,6 +324,24 @@
         "payments:initiate",
         "payments:disburse",
         "payments:callback"
+      ]
+    },
+    {
+      "clientId": "svc-lms",
+      "enabled": true,
+      "secret": "svc-lms-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "publicClient": false,
+      "defaultClientScopes": [
+        "basic",
+        "roles"
+      ],
+      "optionalClientScopes": [
+        "loans:create",
+        "loans:disburse",
+        "loans:service"
       ]
     }
   ],
