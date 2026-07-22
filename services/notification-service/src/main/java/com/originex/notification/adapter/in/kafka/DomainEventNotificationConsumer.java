@@ -3,6 +3,7 @@ package com.originex.notification.adapter.in.kafka;
 import com.originex.notification.application.service.NotificationApplicationService;
 import com.originex.notification.application.service.NotificationApplicationService.DispatchCommand;
 import com.originex.notification.domain.service.EventToNotificationMapper;
+import com.originex.starter.security.MachineActorContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -10,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -83,6 +85,26 @@ public class DomainEventNotificationConsumer {
         log.debug("Notification consumer received: eventType={}, eventId={}", eventType, eventId);
 
         try {
+            // ── Ceremonial machine actor — mechanism uniformity ONLY, NOT an authorization gate. ──
+            //
+            // Every other consumer on the platform establishes a *minimally-scoped* machine principal
+            // because it invokes a @PreAuthorize'd use-case port. notification has none: it is a pure
+            // internal side-effect sink (Kafka in → channel dispatch out), with no use-case port, no REST
+            // surface, and nothing a human or external caller can trigger. There is no authorization
+            // boundary to cross and nothing to authorize — so this principal carries ZERO scopes. It
+            // exists only so the unit of work runs under a named `system:machine` identity instead of
+            // anonymous (audit / mechanism consistency), and so this path is provably unaffected when
+            // originex.security.enabled=true turns method security on (see the RLS IT, which now runs
+            // under enforcement). Do NOT read this as "authz enforced," and do NOT add a @PreAuthorize to
+            // dress it up as a gate: that would fake a boundary the source does not have.
+            //
+            // We set ONLY the SecurityContext — never MachineActorContext.establish(...), which would also
+            // (re-)bind the tenant. The tenant is already bound by the starter's TenantRecordInterceptor
+            // from the tenant_id header, before this @Transactional method; re-binding it here is exactly
+            // the redundant in-consumer set lms is on the hook to drop. The interceptor owns the tenant
+            // lifecycle (and clears it on success/failure); we own only this ceremonial security context
+            // and MUST clear it in the finally below so it can never leak onto the pooled listener thread.
+            SecurityContextHolder.getContext().setAuthentication(MachineActorContext.machineAuthentication());
             MDC.put("tenantId", tenantId);
             MDC.put("eventId", eventId);
 
@@ -115,6 +137,10 @@ public class DomainEventNotificationConsumer {
             // app-level retry poller); a Kafka retry would only re-attempt the class of failure that
             // can double-send an already-sent notification (see KI-11).
         } finally {
+            // Same thread-boundary discipline the scoped consumers use — it still applies to the
+            // ceremonial context, and on the exception path too: clear it here (the interceptor clears
+            // tenant, not the SecurityContext) so no principal survives onto the next record.
+            SecurityContextHolder.clearContext();
             MDC.remove("tenantId");
             MDC.remove("eventId");
         }

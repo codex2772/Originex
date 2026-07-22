@@ -20,6 +20,19 @@
         <dependency><groupId>com.originex</groupId><artifactId>originex-spring-boot-starter</artifactId></dependency>
 
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+        <!--
+          OAuth2 resource server — same OPT-IN the other Phase-1 canaries add, but here for
+          MECHANISM UNIFORMITY ONLY, not because notification has an authorization boundary. It brings
+          Spring Security's method-security + JwtDecoder onto the classpath so the consumer can run under
+          a ceremonial machine principal and so security.enabled=true genuinely activates enforcement in
+          the RLS IT (proving the path does not break under it). notification has NO REST surface and NO
+          use-case port to gate: the JwtDecoder is never called (no HTTP/JWT arrives), and NO @PreAuthorize
+          is added anywhere. This is deliberately NOT the "dead JWT config" the Phase-2 RLS canary declined
+          for lack of any reason to carry it — the reason now is uniformity of the machine-actor mechanism,
+          documented as ceremonial. Behaviour is unchanged while originex.security.enabled=false (starter's
+          permit-all chain backs off Boot's lock-down — see SecurityOptInVerificationTest).
+        -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-oauth2-resource-server</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-jpa</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
