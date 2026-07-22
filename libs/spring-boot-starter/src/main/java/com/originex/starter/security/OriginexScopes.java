@@ -49,6 +49,23 @@ public final class OriginexScopes {
     public static final String NOTIFICATIONS_READ = "notifications:read";
     public static final String NOTIFICATIONS_SEND = "notifications:send";
 
+    // Partner integrations (external vendor verification / bureau)
+    /**
+     * Pull a credit-bureau report (CIBIL/Experian/Equifax/CRIF). A regulated, paid, sensitive-financial-data
+     * operation invoked by los during underwriting — split from {@link #PARTNER_VERIFY} because it is a
+     * distinct caller (svc-los) and a distinct data class from identity verification. Machine holder svc-los
+     * is deferred until the token-less los→partner S2S call adopts client-credentials (threat T4,
+     * {@code dev/AUTH_DESIGN.md}); the gate stays dormant until then.
+     */
+    public static final String PARTNER_CREDIT_PULL = "partner:credit-pull";
+    /**
+     * Verify an identity attribute via an external vendor — Aadhaar, PAN, or bank-account. One scope for all
+     * three: same caller (svc-customer, during KYC/onboarding) and the same privilege class, so splitting
+     * them further would be granularity without a boundary. Machine holder svc-customer is likewise deferred
+     * to the T4 S2S-token work; customer→partner is token-less today, so this gate is dormant.
+     */
+    public static final String PARTNER_VERIFY = "partner:verify";
+
     // Administration / cross-cutting
     public static final String TENANT_ADMIN = "tenant:admin";
     public static final String PLATFORM_ADMIN = "platform:admin";

@@ -1,5 +1,6 @@
 package com.originex.partner.integration;
 
+import com.originex.starter.security.OriginexScopes;
 import com.originex.testsupport.keycloak.KeycloakSupport;
 import com.originex.testsupport.rls.RlsPostgresSupport;
 import org.junit.jupiter.api.BeforeAll;
@@ -163,9 +164,13 @@ class PartnerRlsJwtIsolationIntegrationTest {
     // ── helpers ──
 
     private static String token(String username) {
-        // No scopes requested: the service has no @PreAuthorize, and tenant_id rides
-        // on the originex-tenant default client scope.
-        return KeycloakSupport.passwordToken(KEYCLOAK, WEB_CLIENT, username, PASSWORD, "openid");
+        // partner:verify is now required: /v1/partner/pan/verify is behind @PreAuthorize on that scope, so
+        // an authenticated caller without it is denied (403) before the write/RLS path is reached.
+        // Requesting it here (an optional client scope on originex-web in the realm) makes these callers
+        // realistic, scope-authorized verify callers — the write-side RLS isolation this test proves sits
+        // *behind* the gate. tenant_id still rides on the originex-tenant default client scope.
+        return KeycloakSupport.passwordToken(
+                KEYCLOAK, WEB_CLIENT, username, PASSWORD, "openid " + OriginexScopes.PARTNER_VERIFY);
     }
 
     /** POSTs a PAN verify as the token's tenant; {@code spoofedTenant} may be null. */
