@@ -6,6 +6,8 @@ import com.originex.lms.application.port.in.LoanUseCase;
 import com.originex.starter.kafka.KafkaEventEnvelope;
 import com.originex.starter.outbox.InboxEventJpaEntity;
 import com.originex.starter.outbox.InboxEventRepository;
+import com.originex.starter.security.MachineActorContext;
+import com.originex.starter.security.OriginexScopes;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -13,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -98,10 +101,11 @@ public class PaymentEventConsumer {
         String utr = KafkaEventEnvelope.optionalText(json, "utr", "");
         String paymentOrderId = KafkaEventEnvelope.requiredText(json, "payment_order_id");
 
-        loanUseCase.confirmDisbursementByPayment(
-                UUID.fromString(tenantId), UUID.fromString(loanId),
-                UUID.fromString(paymentOrderId), utr
-        );
+        invokeAsMachine(OriginexScopes.LOANS_DISBURSE, () ->
+                loanUseCase.confirmDisbursementByPayment(
+                        UUID.fromString(tenantId), UUID.fromString(loanId),
+                        UUID.fromString(paymentOrderId), utr
+                ));
         log.info("Disbursement confirmed on loan: loanId={}, utr={}", loanId, utr);
     }
 
@@ -115,10 +119,29 @@ public class PaymentEventConsumer {
         // Only process repayment types (not disbursements echoed back)
         if ("DISBURSEMENT".equals(paymentType)) return;
 
-        loanUseCase.allocateRepaymentFromPayment(
-                UUID.fromString(tenantId), UUID.fromString(loanId), amount, currency
-        );
+        invokeAsMachine(OriginexScopes.LOANS_SERVICE, () ->
+                loanUseCase.allocateRepaymentFromPayment(
+                        UUID.fromString(tenantId), UUID.fromString(loanId), amount, currency
+                ));
         log.info("Repayment allocated from payment event: loanId={}, amount={}", loanId, amount);
+    }
+
+    /**
+     * Runs a single use-case call under a machine identity granted <b>exactly</b> {@code scope} and nothing
+     * else. The tenant is already bound for the whole message (outer {@code TenantContextHolder}); this layers
+     * the minimal capability per branch, so a DisbursementCompleted message carries only {@code loans:disburse}
+     * and a PaymentReceived message only {@code loans:service}. Neither branch can reach {@code loans:create} or
+     * the fraud-sensitive {@code loans:repay-manual} — that isolation is the point (see KI-19). The security
+     * context is cleared immediately after, never leaking onto the pooled Kafka listener thread.
+     */
+    private void invokeAsMachine(String scope, Runnable action) {
+        SecurityContextHolder.getContext().setAuthentication(
+                MachineActorContext.machineAuthentication(scope));
+        try {
+            action.run();
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     /** Payment failed — log for manual review / collections */

@@ -58,7 +58,14 @@ import static org.awaitility.Awaitility.await;
                 "spring.autoconfigure.exclude="
                         + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
                         + "org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration",
-                "management.endpoint.health.validate-group-membership=false"
+                "management.endpoint.health.validate-group-membership=false",
+                // ENFORCED: @PreAuthorize(ledger:post) is live on postJournalEntry, so this is the
+                // decisive test that the Kafka consumer's minimal machine authority (ledger:post)
+                // lets auto-posting succeed under enforcement. If the machine auth were missing the
+                // post would be denied and journalEntryCount would stay 0. The decoder URI is a
+                // placeholder — the consumer path uses a machine SecurityContext, never a JWT.
+                "originex.security.enabled=true",
+                "originex.security.jwk-set-uri=https://idp.example.com/realms/originex/protocol/openid-connect/certs"
         })
 @ActiveProfiles("rls")
 @Testcontainers

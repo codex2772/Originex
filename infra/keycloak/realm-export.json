@@ -4,39 +4,73 @@
   "sslRequired": "none",
   "accessTokenLifespan": 3600,
   "registrationAllowed": false,
-
   "roles": {
     "realm": [
-      { "name": "PLATFORM_ADMIN", "description": "Cross-tenant admin via system route (audited)" },
-      { "name": "TENANT_ADMIN", "description": "User/role admin within a tenant" },
-      { "name": "OPERATIONS", "description": "Disbursement ops, payment initiation" },
-      { "name": "UNDERWRITER", "description": "Application decisioning, KYC verify" },
-      { "name": "COLLECTIONS", "description": "Delinquency actions on overdue loans" },
-      { "name": "FINANCE", "description": "GL postings, reconciliation" },
-      { "name": "CUSTOMER_SUPPORT", "description": "Read + limited profile writes across the tenant's customers" },
-      { "name": "AUDITOR", "description": "Read-only across domains" },
-      { "name": "CUSTOMER", "description": "Borrower - own records only (subject-scoped)" }
+      {
+        "name": "PLATFORM_ADMIN",
+        "description": "Cross-tenant admin via system route (audited)"
+      },
+      {
+        "name": "TENANT_ADMIN",
+        "description": "User/role admin within a tenant"
+      },
+      {
+        "name": "OPERATIONS",
+        "description": "Disbursement ops, payment initiation"
+      },
+      {
+        "name": "UNDERWRITER",
+        "description": "Application decisioning, KYC verify"
+      },
+      {
+        "name": "COLLECTIONS",
+        "description": "Delinquency actions on overdue loans"
+      },
+      {
+        "name": "FINANCE",
+        "description": "GL postings, reconciliation"
+      },
+      {
+        "name": "CUSTOMER_SUPPORT",
+        "description": "Read + limited profile writes across the tenant's customers"
+      },
+      {
+        "name": "AUDITOR",
+        "description": "Read-only across domains"
+      },
+      {
+        "name": "CUSTOMER",
+        "description": "Borrower - own records only (subject-scoped)"
+      }
     ]
   },
-
   "clientScopes": [
     {
       "name": "customers:read",
       "description": "Read customer records",
       "protocol": "openid-connect",
-      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     },
     {
       "name": "customers:write",
       "description": "Create/update customer records",
       "protocol": "openid-connect",
-      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     },
     {
       "name": "originex-tenant",
       "description": "Emits tenant_id and customer_id claims from user attributes",
       "protocol": "openid-connect",
-      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
       "protocolMappers": [
         {
           "name": "tenant_id",
@@ -92,9 +126,116 @@
           }
         }
       ]
+    },
+    {
+      "name": "ledger:read",
+      "description": "Read ledger accounts and journal entries",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "ledger:post",
+      "description": "Open accounts and post journal entries",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "ledger:reverse",
+      "description": "Reverse a committed journal entry (elevated/corrective)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payments:read",
+      "description": "Read payment orders",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payments:initiate",
+      "description": "Collection / inbound / mandate-setup actions",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payments:disburse",
+      "description": "Disburse funds (money out) — HTTP-enforced and the consumer's minimal machine grant",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payments:callback",
+      "description": "Payment-gateway webhook callback — machine-only (gateway service account)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:read",
+      "description": "Read loans, repayment schedules and foreclosure quotes",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:create",
+      "description": "Create a loan record from an approved application (machine — DisbursementRequested consumer)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:disburse",
+      "description": "Disbursement lifecycle — confirm funds moved (machine — payment-event consumer)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:service",
+      "description": "Apply a settlement-backed repayment (machine — driven by a verified payment event)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "loans:repay-manual",
+      "description": "FRAUD-SENSITIVE: manually assert a repayment WITHOUT settlement proof — can mark a loan paid with no money received. Human-only, decision-level scrutiny, never a service account (KI-19).",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     }
   ],
-
   "clients": [
     {
       "clientId": "originex-web",
@@ -104,10 +245,31 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["*"],
-      "webOrigins": ["*"],
-      "defaultClientScopes": ["basic", "originex-tenant", "roles", "profile", "email"],
-      "optionalClientScopes": ["customers:read", "customers:write"]
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "defaultClientScopes": [
+        "basic",
+        "originex-tenant",
+        "roles",
+        "profile",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "customers:read",
+        "customers:write",
+        "ledger:read",
+        "ledger:post",
+        "ledger:reverse",
+        "payments:read",
+        "payments:initiate",
+        "payments:disburse",
+        "loans:read",
+        "loans:repay-manual"
+      ]
     },
     {
       "clientId": "svc-customer",
@@ -118,11 +280,71 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "defaultClientScopes": ["basic", "roles"],
-      "optionalClientScopes": ["customers:read", "customers:write"]
+      "defaultClientScopes": [
+        "basic",
+        "roles"
+      ],
+      "optionalClientScopes": [
+        "customers:read",
+        "customers:write"
+      ]
+    },
+    {
+      "clientId": "svc-ledger",
+      "enabled": true,
+      "secret": "svc-ledger-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "publicClient": false,
+      "defaultClientScopes": [
+        "basic",
+        "roles"
+      ],
+      "optionalClientScopes": [
+        "ledger:read",
+        "ledger:post",
+        "ledger:reverse"
+      ]
+    },
+    {
+      "clientId": "svc-payment",
+      "enabled": true,
+      "secret": "svc-payment-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "publicClient": false,
+      "defaultClientScopes": [
+        "basic",
+        "roles"
+      ],
+      "optionalClientScopes": [
+        "payments:read",
+        "payments:initiate",
+        "payments:disburse",
+        "payments:callback"
+      ]
+    },
+    {
+      "clientId": "svc-lms",
+      "enabled": true,
+      "secret": "svc-lms-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "publicClient": false,
+      "defaultClientScopes": [
+        "basic",
+        "roles"
+      ],
+      "optionalClientScopes": [
+        "loans:create",
+        "loans:disburse",
+        "loans:service"
+      ]
     }
   ],
-
   "users": [
     {
       "username": "customer-alice",
@@ -131,12 +353,24 @@
       "emailVerified": true,
       "firstName": "Alice",
       "lastName": "Borrower",
-      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
       "attributes": {
-        "tenant_id": ["11111111-1111-1111-1111-111111111111"],
-        "customer_id": ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ],
+        "customer_id": [
+          "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        ]
       },
-      "realmRoles": ["CUSTOMER"]
+      "realmRoles": [
+        "CUSTOMER"
+      ]
     },
     {
       "username": "customer-bob",
@@ -145,12 +379,24 @@
       "emailVerified": true,
       "firstName": "Bob",
       "lastName": "Borrower",
-      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
       "attributes": {
-        "tenant_id": ["22222222-2222-2222-2222-222222222222"],
-        "customer_id": ["bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]
+        "tenant_id": [
+          "22222222-2222-2222-2222-222222222222"
+        ],
+        "customer_id": [
+          "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        ]
       },
-      "realmRoles": ["CUSTOMER"]
+      "realmRoles": [
+        "CUSTOMER"
+      ]
     },
     {
       "username": "staff-uma",
@@ -159,11 +405,21 @@
       "emailVerified": true,
       "firstName": "Uma",
       "lastName": "Underwriter",
-      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
       "attributes": {
-        "tenant_id": ["11111111-1111-1111-1111-111111111111"]
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
       },
-      "realmRoles": ["UNDERWRITER"]
+      "realmRoles": [
+        "UNDERWRITER"
+      ]
     }
   ]
 }
