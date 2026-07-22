@@ -53,7 +53,14 @@ import static org.awaitility.Awaitility.await;
                 "spring.autoconfigure.exclude="
                         + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
                         + "org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration",
-                "management.endpoint.health.validate-group-membership=false"
+                "management.endpoint.health.validate-group-membership=false",
+                // ENFORCED: @PreAuthorize(payments:disburse) is live on initiateDisbursement, so this is
+                // the decisive test that the consumer's minimal machine authority lets disbursement
+                // succeed under enforcement. If it were missing, the disbursement would be denied and
+                // no PaymentOrder would be created. Decoder URI is a placeholder — the consumer path
+                // uses a machine SecurityContext, never a JWT.
+                "originex.security.enabled=true",
+                "originex.security.jwk-set-uri=https://idp.example.com/realms/originex/protocol/openid-connect/certs"
         })
 @ActiveProfiles("rls")
 @Testcontainers

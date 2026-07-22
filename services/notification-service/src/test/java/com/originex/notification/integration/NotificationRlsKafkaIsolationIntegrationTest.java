@@ -43,11 +43,19 @@ import static org.awaitility.Awaitility.await;
  * its sole inbound adapter is {@code DomainEventNotificationConsumer}. There is no
  * HTTP request to carry a bearer token, so the tenant arrives on the Kafka
  * {@code tenant_id} record header and is installed by the starter's
- * {@code TenantRecordInterceptor}, not by {@code TenantClaimResolutionFilter}. For
- * the same reason notification has deliberately <b>not</b> opted in to the OAuth2
- * resource server: a {@code JwtDecoder} with nothing to decode would be dead config
- * misrepresenting the service's posture. Modelled on
- * {@code LmsRlsConsumerAndSchedulerIntegrationTest}, the existing Kafka-path precedent.
+ * {@code TenantRecordInterceptor}, not by {@code TenantClaimResolutionFilter}.
+ * Modelled on {@code LmsRlsConsumerAndSchedulerIntegrationTest}, the existing
+ * Kafka-path precedent.
+ *
+ * <p><b>Runs under {@code originex.security.enabled=true}, but there is NO authz gate here.</b>
+ * The Phase-2 RLS canary deliberately did not opt notification into the OAuth2 resource server
+ * (a {@code JwtDecoder} with nothing to decode was dead config then). Phase-1 opts in for
+ * <i>mechanism uniformity</i>: the consumer now runs under a ceremonial {@code system:machine}
+ * principal carrying <b>zero scopes</b>, and this test flips security on to prove that turning
+ * enforcement on does <b>not</b> break the sink — not to prove any capability check passes, because
+ * notification has none (no use-case port, no {@code @PreAuthorize}). The {@code JwtDecoder} is
+ * still never called ({@code webEnvironment=NONE}, no HTTP/JWT), so the {@code jwk-set-uri} below is
+ * a placeholder. Read this as "unaffected by enforcement," not "authz enforced."
  *
  * <p><b>Why tenant 1 is not an arbitrary choice.</b> {@code V1__create_notification_schema.sql}
  * seeds {@code notification_templates} for {@link #TENANT_WITH_TEMPLATES} only, and
@@ -104,6 +112,14 @@ class NotificationRlsKafkaIsolationIntegrationTest {
         r.add("spring.datasource.username", POSTGRES::getUsername);
         r.add("spring.datasource.password", POSTGRES::getPassword);
         r.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        // Turn enforcement on so this is a real under-enforcement proof: @EnableMethodSecurity is now
+        // active, yet the consumer still processes events because its path crosses no @PreAuthorize'd
+        // method (notification is a pure side-effect sink; its machine principal carries no scopes).
+        // No HTTP path is exercised (webEnvironment=NONE), so the decoder is built but never called and
+        // the jwk-set-uri is a placeholder — mirroring LmsRlsConsumerAndSchedulerIntegrationTest.
+        r.add("originex.security.enabled", () -> "true");
+        r.add("originex.security.jwk-set-uri",
+                () -> "https://idp.invalid/realms/originex/protocol/openid-connect/certs");
     }
 
     @BeforeAll
