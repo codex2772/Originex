@@ -33,6 +33,30 @@
       "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
     },
     {
+      "name": "applications:read",
+      "description": "Read loan applications",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "applications:submit",
+      "description": "Applicant self-service: submit, add documents, accept own offer, withdraw",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "applications:underwrite",
+      "description": "Underwriting analysis: initiate a credit-bureau pull and record its result",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "applications:decide",
+      "description": "Credit decision: manually approve (and generate offer) or reject an application",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
       "name": "originex-tenant",
       "description": "Emits tenant_id and customer_id claims from user attributes",
       "protocol": "openid-connect",
@@ -107,7 +131,7 @@
       "redirectUris": ["*"],
       "webOrigins": ["*"],
       "defaultClientScopes": ["basic", "originex-tenant", "roles", "profile", "email"],
-      "optionalClientScopes": ["customers:read", "customers:write"]
+      "optionalClientScopes": ["customers:read", "customers:write", "applications:read", "applications:submit", "applications:underwrite", "applications:decide"]
     },
     {
       "clientId": "svc-customer",

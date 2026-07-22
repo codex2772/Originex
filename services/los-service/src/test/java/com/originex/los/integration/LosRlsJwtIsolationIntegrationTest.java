@@ -61,9 +61,13 @@ import static org.mockito.Mockito.when;
  * the {@code String}→{@code jsonb} bind is proven on the RLS datasource here too.
  *
  * <p>Tokens are minted for the realm's {@code customer-alice} ({@link #ALICE_TENANT})
- * and {@code customer-bob} ({@link #BOB_TENANT}). No scopes are requested: los has
- * no {@code @PreAuthorize} guards, and {@code originex-tenant} is a default client
- * scope, so the tokens carry {@code tenant_id} regardless.
+ * and {@code customer-bob} ({@link #BOB_TENANT}), and now request
+ * {@code applications:submit applications:read} — the scopes for the two operations
+ * this test drives. That is load-bearing: the port is guarded as of the authz pass,
+ * so under {@code ENFORCED} a scopeless token would earn <b>403</b> on the submit,
+ * not the 202 asserted below. A green run therefore also proves the guards are wired
+ * to the real filter chain and satisfied by a correctly-scoped token, not merely
+ * that RLS isolates tenants.
  *
  * <p>The read path builds {@code /v1/loan-applications/{id}} directly, as the other
  * canaries do. Unlike payment's, los's {@code Location} header <i>does</i> resolve —
@@ -231,9 +235,11 @@ class LosRlsJwtIsolationIntegrationTest {
     // ── helpers ──
 
     private static String token(String username) {
-        // No scopes requested: los has no @PreAuthorize, and tenant_id rides on the
-        // originex-tenant default client scope.
-        return KeycloakSupport.passwordToken(KEYCLOAK, WEB_CLIENT, username, PASSWORD, "openid");
+        // Requests exactly the scopes this test exercises — submit (POST) and read (GET).
+        // Under ENFORCED the guarded port would 403 the submit without them; tenant_id
+        // still rides on the originex-tenant default client scope independently.
+        return KeycloakSupport.passwordToken(KEYCLOAK, WEB_CLIENT, username, PASSWORD,
+                "openid", "applications:submit", "applications:read");
     }
 
     /**

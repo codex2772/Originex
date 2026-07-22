@@ -24,8 +24,18 @@ public final class OriginexScopes {
 
     // Origination (LOS)
     public static final String APPLICATIONS_READ = "applications:read";
+    /** Applicant self-service: submit, supplement (documents), accept own offer, withdraw. */
     public static final String APPLICATIONS_SUBMIT = "applications:submit";
+    /** Underwriting <b>analysis</b> — e.g. initiating a credit-bureau pull (a process step). */
     public static final String APPLICATIONS_UNDERWRITE = "applications:underwrite";
+    /**
+     * The credit <b>decision</b> — approve (+ generate offer) or reject. A distinct, higher privilege
+     * than {@link #APPLICATIONS_UNDERWRITE} (running the analysis): the decision commits the lender.
+     * Separating it enables segregation of duties — running checks does not confer authority to approve.
+     * (Enforcing that no one persona holds both submit and decide is deferred to role-gating; see KI-14.
+     * A per-application "approver ≠ submitter" control is a separate workflow concern; see KI-16.)
+     */
+    public static final String APPLICATIONS_DECIDE = "applications:decide";
     public static final String OFFERS_MANAGE = "offers:manage";
 
     // Loans (LMS)
