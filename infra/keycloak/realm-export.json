@@ -33,6 +33,18 @@
       "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
     },
     {
+      "name": "partner:credit-pull",
+      "description": "Pull a credit-bureau report (regulated, paid; los caller). Distinct from identity verification; machine grant (svc-los) deferred to S2S tokens (T4).",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "partner:verify",
+      "description": "Verify an identity attribute (Aadhaar/PAN/bank) via an external vendor; customer caller during KYC. Machine grant (svc-customer) deferred to S2S tokens (T4).",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
       "name": "originex-tenant",
       "description": "Emits tenant_id and customer_id claims from user attributes",
       "protocol": "openid-connect",
@@ -107,7 +119,7 @@
       "redirectUris": ["*"],
       "webOrigins": ["*"],
       "defaultClientScopes": ["basic", "originex-tenant", "roles", "profile", "email"],
-      "optionalClientScopes": ["customers:read", "customers:write"]
+      "optionalClientScopes": ["customers:read", "customers:write", "partner:credit-pull", "partner:verify"]
     },
     {
       "clientId": "svc-customer",
