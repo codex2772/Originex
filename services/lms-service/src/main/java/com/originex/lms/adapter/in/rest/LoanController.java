@@ -31,6 +31,21 @@ public class LoanController {
         return ResponseEntity.ok(LoanResponse.from(loan));
     }
 
+    /**
+     * Fetch the loan created from an LOS application. Returns 404 while the loan
+     * has not yet materialised (the frontend's "still processing" polling signal);
+     * see {@code LoanUseCase#getLoanByApplicationId} for the 404 semantics and why
+     * the terminal stop-condition must come from the LOS application status.
+     */
+    // TODO(lms-authz): when LMS adopts @PreAuthorize, gate all reads uniformly with
+    // hasAuthority('SCOPE_' + OriginexScopes.LOANS_READ) — this endpoint included.
+    @GetMapping("/by-application/{applicationId}")
+    public ResponseEntity<LoanResponse> getLoanByApplication(@PathVariable UUID applicationId) {
+        UUID tenantId = UUID.fromString(TenantContextHolder.requireTenantId());
+        Loan loan = loanUseCase.getLoanByApplicationId(tenantId, applicationId);
+        return ResponseEntity.ok(LoanResponse.from(loan));
+    }
+
     @GetMapping("/{loanId}/repayment-schedule")
     public ResponseEntity<ScheduleResponse> getSchedule(@PathVariable UUID loanId) {
         UUID tenantId = UUID.fromString(TenantContextHolder.requireTenantId());

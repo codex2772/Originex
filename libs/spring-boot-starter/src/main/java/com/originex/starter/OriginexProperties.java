@@ -13,6 +13,7 @@ public class OriginexProperties {
     private KafkaProperties kafka = new KafkaProperties();
     private RlsProperties rls = new RlsProperties();
     private SecurityProperties security = new SecurityProperties();
+    private WebProperties web = new WebProperties();
 
     public TenantProperties getTenant() { return tenant; }
     public void setTenant(TenantProperties tenant) { this.tenant = tenant; }
@@ -22,6 +23,8 @@ public class OriginexProperties {
     public void setRls(RlsProperties rls) { this.rls = rls; }
     public SecurityProperties getSecurity() { return security; }
     public void setSecurity(SecurityProperties security) { this.security = security; }
+    public WebProperties getWeb() { return web; }
+    public void setWeb(WebProperties web) { this.web = web; }
 
     public static class TenantProperties {
         private String headerName = "X-Tenant-Id";
@@ -109,6 +112,36 @@ public class OriginexProperties {
         public void setMaximumPoolSize(int maximumPoolSize) { this.maximumPoolSize = maximumPoolSize; }
         public String getPoolName() { return poolName; }
         public void setPoolName(String poolName) { this.poolName = poolName; }
+    }
+
+    /**
+     * Browser-facing web settings. Currently only CORS.
+     */
+    public static class WebProperties {
+        private Cors cors = new Cors();
+
+        public Cors getCors() { return cors; }
+        public void setCors(Cors cors) { this.cors = cors; }
+
+        /**
+         * Cross-Origin Resource Sharing. <b>Fail-safe by default:</b>
+         * {@code allowedOrigins} is empty, and the CORS auto-configuration is
+         * gated on this property being present ({@code @ConditionalOnProperty}),
+         * so with no configuration <i>no CORS beans exist</i> and browsers get no
+         * {@code Access-Control-Allow-Origin} header — cross-origin is blocked.
+         * Production sets nothing (off); <b>dev opts in</b> by listing explicit
+         * origins (e.g. {@code http://localhost:3000,http://localhost:5173}).
+         * Wildcards are never used — origins are matched exactly, and credentials
+         * are allowed only against those explicit origins.
+         */
+        public static class Cors {
+            private java.util.List<String> allowedOrigins = new java.util.ArrayList<>();
+
+            public java.util.List<String> getAllowedOrigins() { return allowedOrigins; }
+            public void setAllowedOrigins(java.util.List<String> allowedOrigins) {
+                this.allowedOrigins = allowedOrigins;
+            }
+        }
     }
 
     /**

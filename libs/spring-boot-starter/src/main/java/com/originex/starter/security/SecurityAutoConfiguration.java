@@ -28,6 +28,7 @@ import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.util.StringUtils;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -82,12 +83,14 @@ public class SecurityAutoConfiguration {
     public SecurityFilterChain originexResourceServerFilterChain(HttpSecurity http,
                                                                  JwtDecoder jwtDecoder,
                                                                  OriginexProperties properties,
-                                                                 ObjectProvider<MeterRegistry> meterRegistry)
+                                                                 ObjectProvider<MeterRegistry> meterRegistry,
+                                                                 ObjectProvider<CorsConfigurationSource> corsSource)
             throws Exception {
         OriginexProperties.SecurityProperties security = properties.getSecurity();
         AuthMode mode = security.getMode();
         MeterRegistry registry = meterRegistry.getIfAvailable(SimpleMeterRegistry::new);
 
+        applyCors(http, corsSource);
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -122,11 +125,32 @@ public class SecurityAutoConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = PREFIX, name = ENABLED, havingValue = "false", matchIfMissing = true)
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-    public SecurityFilterChain originexSecurityDisabledFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain originexSecurityDisabledFilterChain(HttpSecurity http,
+                                                                   ObjectProvider<CorsConfigurationSource> corsSource) throws Exception {
+        applyCors(http, corsSource);
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
+    }
+
+    /**
+     * Enable CORS on the security filter chain <i>only</i> when a
+     * {@link CorsConfigurationSource} bean is present (contributed by
+     * {@code WebCorsAutoConfiguration}, itself gated on
+     * {@code originex.web.cors.allowed-origins}). When absent — the default —
+     * {@code http.cors(...)} is never called, so the security chain does not emit
+     * CORS headers and preflight is not specially handled: fail-safe, default-off.
+     * Without this wiring, {@code http.cors()} would only auto-detect a bean named
+     * {@code corsConfigurationSource}; the Originex bean has a different name, so
+     * the source must be supplied explicitly.
+     */
+    private static void applyCors(HttpSecurity http, ObjectProvider<CorsConfigurationSource> corsSource)
+            throws Exception {
+        CorsConfigurationSource source = corsSource.getIfAvailable();
+        if (source != null) {
+            http.cors(cors -> cors.configurationSource(source));
+        }
     }
 
     /**
