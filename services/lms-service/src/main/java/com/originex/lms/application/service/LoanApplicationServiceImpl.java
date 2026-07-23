@@ -1,5 +1,6 @@
 package com.originex.lms.application.service;
 
+import com.originex.common.exception.ResourceNotFoundException;
 import com.originex.common.money.Money;
 import com.originex.lms.application.port.in.LoanUseCase;
 import com.originex.lms.application.port.out.LoanRepository;
@@ -81,7 +82,15 @@ public class LoanApplicationServiceImpl implements LoanUseCase {
     @Transactional(readOnly = true)
     public Loan getLoan(UUID tenantId, UUID loanId) {
         return loanRepository.findById(tenantId, loanId)
-                .orElseThrow(() -> new IllegalArgumentException("Loan not found: " + loanId));
+                .orElseThrow(() -> new ResourceNotFoundException("Loan not found: " + loanId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Loan getLoanByApplicationId(UUID tenantId, UUID applicationId) {
+        return loanRepository.findByApplicationId(tenantId, applicationId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No loan for application: " + applicationId));
     }
 
     @Override

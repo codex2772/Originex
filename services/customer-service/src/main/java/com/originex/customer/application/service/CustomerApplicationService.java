@@ -64,12 +64,26 @@ public class CustomerApplicationService implements CustomerUseCase {
             }
         }
 
+        // Create domain aggregate first so its customerId exists as the PAN
+        // verification referenceId (the Partner audit record must correlate to
+        // this customer). register() only builds the aggregate in memory — no
+        // persistence, no side effects — so a failed PAN verification below
+        // still throws before anything is saved.
+        Customer customer = Customer.register(
+                command.tenantId(),
+                command.firstName(),
+                command.lastName(),
+                command.email(),
+                command.phone(),
+                command.dateOfBirth()
+        );
+
         // Live PAN verification via Partner Integration Service (NSDL)
         if (command.panNumber() != null) {
             String fullName = command.firstName() + " " + command.lastName();
             PanVerificationPort.PanVerificationResult panResult = panVerificationPort.verify(
                     new PanVerificationPort.PanVerificationRequest(
-                            command.tenantId().toString(), null, // referenceId assigned after customer creation
+                            command.tenantId().toString(), customer.getCustomerId().toString(),
                             command.panNumber(), fullName,
                             command.dateOfBirth() != null ? command.dateOfBirth().toString() : null
                     ));
@@ -80,16 +94,6 @@ public class CustomerApplicationService implements CustomerUseCase {
             }
             log.info("PAN verified successfully: status={}, nameMatch={}", panResult.panStatus(), panResult.nameMatch());
         }
-
-        // Create domain aggregate
-        Customer customer = Customer.register(
-                command.tenantId(),
-                command.firstName(),
-                command.lastName(),
-                command.email(),
-                command.phone(),
-                command.dateOfBirth()
-        );
 
         // Set PAN (encrypted + hash)
         if (command.panNumber() != null) {

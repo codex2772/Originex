@@ -4,4 +4,5 @@ com.originex.starter.rls.RlsDataSourceAutoConfiguration
 com.originex.starter.rls.RlsAutoConfiguration
 com.originex.starter.rls.RlsKafkaAutoConfiguration
 com.originex.starter.security.SecurityAutoConfiguration
+com.originex.starter.web.WebCorsAutoConfiguration
 com.originex.starter.kafka.OriginexKafkaErrorHandlingAutoConfiguration

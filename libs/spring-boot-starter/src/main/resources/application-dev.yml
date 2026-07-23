@@ -1,0 +1,24 @@
+# ============================================================================
+# Shared local-development profile  —  activate with the "dev" Spring profile.
+#
+# This file lives ONCE in the platform starter so every service inherits the
+# same developer-convenience settings; there is no per-service dev YAML to keep
+# in sync. It is profile-specific (application-dev.yml), so Spring Boot loads it
+# only when the "dev" profile is active — e.g. SPRING_PROFILES_ACTIVE=dev
+# (composes with others, so dev,rls is fine).
+#
+# OFF BY DEFAULT / FAIL-SAFE: with the profile inactive this file is never
+# loaded, originex.web.cors.allowed-origins stays absent, and
+# WebCorsAutoConfiguration contributes NO CORS beans — no Access-Control-Allow-
+# Origin header is emitted and browsers block cross-origin requests. Production
+# does nothing and is genuinely off; only dev opts IN, here.
+#
+# CORS: explicit dev-frontend origins only (never a wildcard), so credentialed
+# requests stay legal. Both common local dev-server ports are listed up front
+# because the frontend stack is not yet chosen — 3000 (Next.js / CRA) and
+# 5173 (Vite). Trim to the one actually used once the stack lands.
+# ============================================================================
+originex:
+  web:
+    cors:
+      allowed-origins: http://localhost:3000,http://localhost:5173
